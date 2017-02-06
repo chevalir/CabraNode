@@ -177,6 +177,11 @@ public:
 		type = newType;
 		ID = newID;
 		index = newIndex;
+		if (newType == DHT_H) {
+			gapMin = 100; // 1%
+		} else {
+			gapMin = 10; // 0.1 °C
+		}
 		//Probe::nbDSProbeCount++;
 	}
 	Probe::Probe(byte newType, byte newID):Probe(newType, newID,0){
@@ -210,7 +215,9 @@ public:
 	#endif
 		return rawValue*100;
 	}
-	/**
+	
+	
+	/***************************************************************************
 	*/
 	bool checkNewValue() {
 	#if defined (LOG_DEBUG)
@@ -242,7 +249,7 @@ public:
 			this->lastValue = newValue;
 			Serial.print(" Need to send ="); Serial.println(this->lastValue );
 			this->skeepCount = 0;
-
+			return true;
 		} else {
 		#if defined (LOG_DEBUG)
 			Serial.print("No Change / skeepCount="); Serial.println(this->skeepCount);
@@ -254,6 +261,11 @@ public:
 	}
 	
 	String Probe::toString() {
+		String thisStr = "Probe::ID:"; thisStr += this->ID;
+		thisStr += " type:"; thisStr += this->type; 
+		thisStr += " gapMin:"; thisStr += this->gapMin; 
+		thisStr += " lastValue:"; thisStr += this->lastValue; 
+		return thisStr;
 	}
 
 
@@ -340,6 +352,7 @@ void setup() {
 		//getDSTemperature(indexprobe);
 		ptrProbes[indexprobe] = new Probe (Probe::DS18B20, PROBE_ID+indexprobe , indexprobe);
 		ptrProbes[indexprobe]->readValue();
+		Serial.println(ptrProbes[indexprobe]->toString());
 	}
 	#endif
 	#if (NDHT > 0)	
@@ -418,9 +431,9 @@ void blinkLed(int repeat, int time) {
 *******/
 void doAction(byte order) {
 
-	#if defined(LOG_DEBUG)
+														#if defined(LOG_DEBUG)
 	Serial.print("motor>>");Serial.println(order);
-	#endif
+														#endif
 
 	if (order < 10 ) {
 		bool ok = false;
@@ -444,12 +457,15 @@ void doAction(byte order) {
    TorH : true for temperature, false for humidity
 **/
 void sendAllProbeValues(byte nbTotalProbe) {
+	Probe* ptrProbe;
 	for ( int numProbe = 0;  numProbe <nbTotalProbe ; numProbe++) {
-		//sendProbeValues(numProbe);
-		bool needToSend = ptrProbes[numProbe]->checkNewValue();
+		ptrProbe = ptrProbes[numProbe];
+		bool needToSend = ptrProbe->checkNewValue();
 		if ( needToSend ) {
-			// @@ICI
-			sendProbeValue(*ptrProbes, true);	
+															#if defined(LOG_INFO)		
+			Serial.println(ptrProbe->toString());
+															#endif
+			sendProbeValue(ptrProbe, true);	
 		}
 	}
 }
@@ -514,9 +530,7 @@ int getDHT22Value(boolean TorH) {
 //  |___/\___|_| |_|\__,_\_|  |_|  \___/|_.__/ \___| \___/ \__,_|_|\__,_|\___|
 //
 //
-//int sendProbeValue( byte aProbeNum, int aValue, bool aSend ) {
 int sendProbeValue( Probe* theProbe, bool aSend ) {
-	
 	int decValueD;
 	int aValue = theProbe->lastValue;
 	bool positive = aValue > 0;
@@ -552,13 +566,12 @@ int sendProbeValue( Probe* theProbe, bool aSend ) {
 		}
 	}
 	// return temperature to -0 in case of error
-	#if defined(LOG_INFO)		
-	//Serial.print("Probe sensor Value "); Serial.println( aValue, DEC);
+#if defined(LOG_INFO)		
 	Serial.print(" ID: " ); Serial.print( theProbe->ID, DEC);
 	Serial.print(" value: " );
 	Serial.print(tempValue); Serial.print("."); Serial.print(decValueD);
 	Serial.print(" Signe: " ); Serial.println( positive, DEC);
-	#endif
+#endif
 	if ( aSend ) {
 		theRadio.send2RF(false , tempValue, decValueD, theProbe->ID, positive);
 	}
