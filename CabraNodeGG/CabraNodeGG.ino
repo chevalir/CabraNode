@@ -215,8 +215,8 @@ public:
 	#endif
 		return rawValue*100;
 	}
-	
-	
+
+
 	/***************************************************************************
 	*/
 	bool checkNewValue() {
@@ -244,8 +244,6 @@ public:
 		        || (gap >= this->gapMin && this->skeepCount > (SKEEP_MAX/2) ) // send low change every 10 min if any (depend of conf)
 		        || this->skeepCount > SKEEP_MAX // send value every 20 min ( depend of conf )
 		   ) {
-		//@@ICI
-			// this->lastValue = sendProbeValue(lProbeNum, newValue, true);
 			this->lastValue = newValue;
 			Serial.print(" Need to send ="); Serial.println(this->lastValue );
 			this->skeepCount = 0;
@@ -259,12 +257,12 @@ public:
 		}
 
 	}
-	
+
 	String Probe::toString() {
 		String thisStr = "Probe::ID:"; thisStr += this->ID;
-		thisStr += " type:"; thisStr += this->type; 
-		thisStr += " gapMin:"; thisStr += this->gapMin; 
-		thisStr += " lastValue:"; thisStr += this->lastValue; 
+		thisStr += " type:"; thisStr += this->type;
+		thisStr += " gapMin:"; thisStr += this->gapMin;
+		thisStr += " lastValue:"; thisStr += this->lastValue;
 		return thisStr;
 	}
 
@@ -393,7 +391,7 @@ void loop(){
 	wdReset();
 	// manage RF reception
 	if ( theRadio.orderAvailable() ) {
-		
+
 		wdDisable();
 		doAction(theRadio.getOrder());
 		wdEnable();
@@ -465,7 +463,7 @@ void sendAllProbeValues(byte nbTotalProbe) {
 															#if defined(LOG_INFO)		
 			Serial.println(ptrProbe->toString());
 															#endif
-			sendProbeValue(ptrProbe, true);	
+			sendProbeValue(ptrProbe, true);
 		}
 	}
 }
