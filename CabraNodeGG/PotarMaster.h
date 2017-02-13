@@ -30,12 +30,14 @@ public:
 	PotarMaster();
 	PotarMaster(byte gI2cBusID);
 	//methodes
-	void sendOrder(byte order);
-	bool checkAck();
+	bool sendOrder(byte order);
+	bool sendOrder(byte order, byte retryNumber);
 
 private :
 	byte orderAck=0;
 	byte gI2cBusID;
+	bool waitBusAvailable(int);
+	void clearBus();
 };
 
 

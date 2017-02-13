@@ -30,9 +30,18 @@ PotarMaster::PotarMaster():PotarMaster(I2CBUSID) {
 //   _ _  /\__/ /  __/ | | | (_| \ \_/ / | | (_| |  __/ |   
 //  (_|_) \____/ \___|_| |_|\__,_|\___/|_|  \__,_|\___|_|   
 //                                                          
-//                                                          
-void PotarMaster::sendOrder(byte order) {
-	
+// 
+bool PotarMaster::sendOrder(byte order, byte retryNumber) {
+	bool ackOk = false;
+	while (!ackOk && retryNumber>0) {
+			ackOk = this->sendOrder(order);
+			retryNumber--;
+	}
+	return ackOk;
+}
+
+bool PotarMaster::sendOrder(byte order) {
+	Serial.println(order); 
 	Wire.beginTransmission(this->gI2cBusID); // transmit to device #X
 	Wire.write("order is:");
 	Wire.write(order);
@@ -43,52 +52,35 @@ void PotarMaster::sendOrder(byte order) {
 	bool ackOk = false;
 	String ack="Ack:";
 	int a = Wire.requestFrom(int(this->gI2cBusID), int(1));    // request 6 bytes from slave device #8
-  int timeout = 100;
-  // wait answer
-	while (Wire.available()==0 && timeout>0) {
-		delay(100);
-		Serial.print(".");
-		timeout--;
-	}
-	Serial.println(Wire.available(), DEC);
-  if (Wire.available() > 0 ) {
-  	int c = Wire.read();
-  	Serial.println(c, DEC);
-  	ackOk = c == this->orderAck;
-  } 
   
-  // reset buffer
+  // wait answer
+	if ( waitBusAvailable(50) ) {
+		Serial.println(Wire.available(), DEC);
+		if (Wire.available() > 0 ) {
+			int c = Wire.read();
+			// Serial.println(c, DEC);
+			ackOk = c == this->orderAck;
+		} 
+		
+		// reset buffer
+		while (Wire.available()) { // slave may send less than requested
+			char c = Wire.read(); // receive a byte as character
+		}
+  }
+  return ackOk;
+}
+
+void PotarMaster::clearBus () {
   while (Wire.available()) { // slave may send less than requested
     char c = Wire.read(); // receive a byte as character
     //Serial.print(c);         // print the character
   }
 }
-
-bool PotarMaster::checkAck() {
-	
-	// Check ACK
-	bool ackOk = false;
-	String ack="Ack:";
-	int a = Wire.requestFrom(int(this->gI2cBusID), int(1));    // request 6 bytes from slave device #8
-  int timeout = 100;
+bool PotarMaster::waitBusAvailable(int timeout) {
   // wait answer
 	while (Wire.available()==0 && timeout>0) {
-		delay(100);
+		delay(20);
 		Serial.print(".");
 		timeout--;
 	}
-	// Serial.println(Wire.available(), DEC);
-  if (Wire.available() > 0 ) {
-  	int c = Wire.read();
-  	// Serial.println(c, DEC);
-  	ackOk = c == this->orderAck;
-  } 
-  
-  // reset buffer
-  while (Wire.available()) { // slave may send less than requested
-    char c = Wire.read(); // receive a byte as character
-    //Serial.print(c);         // print the character
-  }
-  
-  return ackOk;
 }

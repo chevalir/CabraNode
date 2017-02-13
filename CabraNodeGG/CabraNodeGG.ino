@@ -31,7 +31,7 @@
 // define LOG_WARNING 1
 
 #define NDSPROBE 3 // Number of DS18B20 connected to
-#define NDHT 0 // Number of DHT22 connected to
+#define NDHT 0     // Number of DHT22 connected to
 // PIN constantes
 #define RFRX_PIN 2// 3 		// RF433 receiver
 #define RFTX_PIN 7// 4		// RF433 transmiter
@@ -45,6 +45,12 @@ const byte ONEWIRE_PIN = 9;
 
 OneWire theOneWire(ONEWIRE_PIN);
 DallasTemperature dallasSensors(&theOneWire);
+#endif
+
+// DHT initialisation
+#if (NDHT > 0)
+#include "DHT.h"
+DHT dhtprobe(DHT_PIN, DHT22);
 #endif
 
 
@@ -154,13 +160,18 @@ private:
 
 };
 
-
+/******************
+**   Probe
+**
+**/
 class Probe {
-	static const unsigned int READ_ERROR = 9999;
 	//static byte nbDSProbeCount;
 	static const byte SKEEP_MAX = 3;
 	//static DallasTemperature *ptrSensor;
+
 public:
+	static const unsigned int READ_ERROR = 9999;
+	
 	// static DallasTemperature *ptrSensor;
 	static const byte DS18B20 = 0;
 	static const byte DHT_H = 1;
@@ -173,47 +184,28 @@ public:
 	byte skeepCount = 0;
 	byte skeepMax = SKEEP_MAX;
 
-	Probe::Probe(byte newType, byte newID, byte newIndex){
-		type = newType;
+	/***************************************************************************
+	*/
+	Probe::Probe(byte newID, byte newIndex){
 		ID = newID;
 		index = newIndex;
-		if (newType == DHT_H) {
-			gapMin = 100; // 1%
-		} else {
-			gapMin = 10; // 0.1 °C
-		}
-		//Probe::nbDSProbeCount++;
-	}
-	Probe::Probe(byte newType, byte newID):Probe(newType, newID,0){
 	}
 
-	Probe::Probe():Probe(DS18B20, 0, 0){
-	}
-	/**
+
+	/***************************************************************************
 	*/
 	byte Probe::getType(){
 		return this->type;
 	}
-	/**
-	*/
-	int Probe::readValue() {
-		// *** MORE THAN ONE RETURN ****
-		float rawValue = NAN;
-		dallasSensors.requestTemperatures();
-		rawValue = dallasSensors.getTempCByIndex(this->index);
 
-		if ( isnan(rawValue) || rawValue < -10 || rawValue == 85 || rawValue > 125 ) {
-		#if defined(LOG_WARNING)		
-			Serial.println("DS #") ; Serial.print(this->index) ;
-			Serial.println(" off or error");
-		#endif
-			return READ_ERROR;
-		}
+	/***************************************************************************
+	*/
+	virtual int Probe::readValue() {
+
 	#if defined(LOG_DEBUG)		
-		Serial.print("DS #") ; Serial.print(this->index);
-		Serial.print(" t="); Serial.println(rawValue);
+		Serial.print("Default method should be overwrited") ;
 	#endif
-		return rawValue*100;
+		return READ_ERROR;
 	}
 
 
@@ -225,7 +217,6 @@ public:
 		Serial.print(" Type="); Serial.println(this->getType());
 	#endif
 		int newValue = this->readValue();
-		// @@RC newValue = 100+10*flaseValue++;
 
 	#if defined (LOG_DEBUG)
 		Serial.print("newValue="); Serial.print(newValue);
@@ -258,8 +249,10 @@ public:
 
 	}
 
-	String Probe::toString() {
-		String thisStr = "Probe::ID:"; thisStr += this->ID;
+	/***************************************************************************
+	*/
+	virtual String Probe::toString() {
+		String thisStr = " ID:"; thisStr += this->ID;
 		thisStr += " type:"; thisStr += this->type;
 		thisStr += " gapMin:"; thisStr += this->gapMin;
 		thisStr += " lastValue:"; thisStr += this->lastValue;
@@ -267,15 +260,57 @@ public:
 	}
 
 
-private:
+protected:
 	byte type;
 
 };
 
 
+/*******************************************************************************
+*       DallasProbe
+*
+*/
+class DallasProbe: public Probe {
+public:
+	String DallasProbe::toString() {
+		String thisStr = "DallasProbe ";
+		thisStr += Probe::toString();
+		return thisStr;
+	}
+
+	DallasProbe::DallasProbe(byte newID, byte newIndex):Probe(newID, newIndex){
+		gapMin = 10; // 0.1 °C
+		type = DS18B20;
+	}
+
+	/**********************
+	*/
+	int DallasProbe::readValue() {
+		// *** MORE THAN ONE RETURN ****
+		float rawValue = NAN;
+		dallasSensors.requestTemperatures();
+		rawValue = dallasSensors.getTempCByIndex(this->index);
+
+		if ( isnan(rawValue) || rawValue < -10 || rawValue == 85 || rawValue > 125 ) {
+		#if defined(LOG_WARNING)		
+			Serial.println("DS #") ; Serial.print(this->index) ;
+			Serial.println(" off or error");
+		#endif
+			return READ_ERROR;
+		}
+	#if defined(LOG_DEBUG)		
+		Serial.print("DS #") ; Serial.print(this->index);
+		Serial.print(" t="); Serial.println(rawValue);
+	#endif
+		return rawValue*100;
+	}
+
+};
+
+
+
 // GLOBAL constantes
 
-const unsigned int READ_ERROR = 9999;
 
 const byte PROBE_ID = 8; // ID of probe beetween 0 and 15
 // const byte DEVICE_STATE_ID = 5; // first state identifier added to device number
@@ -285,17 +320,7 @@ const byte PROBE_ID = 8; // ID of probe beetween 0 and 15
 
 Radio theRadio = Radio();
 
-Probe* ptrProbes[NDSPROBE + NDHT*2]; // same value for all
-
-
-// minimum gap to send value 10 for 0.1°C, and 100 for 1%
-
-// DHT initialisation
-#if (NDHT > 0)
-#include "DHT.h"
-DHT dhtprobe(DHT_PIN, DHT22);
-#endif
-
+Probe* ptrProbes[NDSPROBE + NDHT*2]; // Array of Probe
 
 
 PotarMaster potar = PotarMaster();
@@ -323,7 +348,7 @@ boolean itsTimeForTemp = false;
 void setup() {
 	#if defined(LED_PIN)
 	pinMode(LED_PIN, OUTPUT);
-	blinkLed(2, 10);
+	blinkLed(20, 10);
 	#endif
 	wdDisable();
 	#if defined(LOG)	
@@ -348,19 +373,18 @@ void setup() {
 	// just to avoid probleme with some sensor where the first value returned is not correct
 	for (int indexprobe = 0 ; indexprobe < NDSPROBE; indexprobe++) {
 		//getDSTemperature(indexprobe);
-		ptrProbes[indexprobe] = new Probe (Probe::DS18B20, PROBE_ID+indexprobe , indexprobe);
+		ptrProbes[indexprobe] = new DallasProbe (PROBE_ID+indexprobe , indexprobe);
 		ptrProbes[indexprobe]->readValue();
 		Serial.println(ptrProbes[indexprobe]->toString());
 	}
 	#endif
+
+
 	#if (NDHT > 0)	
 	dhtprobe.begin();
 	#endif
 
-	#if defined(LED_PIN)
-	pinMode(LED_PIN, OUTPUT);
-	blinkLed(2, 10);
-	#endif
+	blinkLed(10, 100);
 
 	// Start
 	#if defined(LOG)		
@@ -408,12 +432,14 @@ void loop(){
 //
 //
 void blinkLed(int repeat, int time) {
+	#if defined(LED_PIN)
 	for (int i = 0; i < repeat; i++) {
 		delay(time);
 		digitalWrite(LED_PIN, HIGH);
 		delay(time);
 		digitalWrite(LED_PIN, LOW);
 	}
+	#endif	
 }
 
 
@@ -428,19 +454,11 @@ void blinkLed(int repeat, int time) {
 **
 *******/
 void doAction(byte order) {
-
-														#if defined(LOG_DEBUG)
+	#if defined(LOG_DEBUG)
 	Serial.print("motor>>");Serial.println(order);
-														#endif
-
-	if (order < 10 ) {
-		bool ok = false;
-		int timeout=0;
-		while ( !ok ) {
-			potar.sendOrder(orderValues[order]);
-			ok = potar.checkAck() || ++timeout>2;
-		}
-	}
+	#endif
+	blinkLed(4, 250);
+	if (order < 10 ) potar.sendOrder(orderValues[order], 2);
 }
 
 //   _____                                   _
@@ -539,7 +557,7 @@ int sendProbeValue( Probe* theProbe, bool aSend ) {
 	#endif
 
 	// bad values returned by the sensor >-10 or 85
-	if ( aValue == READ_ERROR ) {
+	if ( aValue == Probe::READ_ERROR ) {
 		#if defined(LOG_INFO)		
 		#endif
 		if ( aValue == 9000 ) { // Bizard ?????????
