@@ -21,8 +21,6 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 #include "Arduidom_Radio.h"
-#include <EEPROMex.h>
-#include "PotarMaster.h"
 
 // DEBUG LEVEL
 #define LOG 1
@@ -30,13 +28,20 @@
 #define LOG_INFO 1
 // define LOG_WARNING 1
 
-#define NDSPROBE 3 // Number of DS18B20 connected to
+#define NDSPROBE 2 // Number of DS18B20 connected to
 #define NDHT 0 // Number of DHT22 connected to
 // PIN constantes
-#define RFRX_PIN 2// 3 		// RF433 receiver
-#define RFTX_PIN 7// 4		// RF433 transmiter
+#define RFRX_PIN 2   // 3 		// RF433 receiver
+#define RFTX_PIN 7   // 4		// RF433 transmiter
 #define LED_PIN 13
 const byte ONEWIRE_PIN = 9;
+
+#ifdef POTAR
+#include "PotarMaster.h"
+PotarMaster potar = PotarMaster();
+#endif
+
+
 
 // Dallas DS18B20 temperature sensor bus init
 #if (NDSPROBE > 0)
@@ -298,7 +303,6 @@ DHT dhtprobe(DHT_PIN, DHT22);
 
 
 
-PotarMaster potar = PotarMaster();
 unsigned long tempLastCheckProbe = 0 ;
 
 //unsigned long checkProbFreq = 5*60000; //5 * 1 minutes
@@ -390,12 +394,13 @@ void loop(){
 	}
 	wdReset();
 	// manage RF reception
+	/*
 	if ( theRadio.orderAvailable() ) {
 
 		wdDisable();
 		doAction(theRadio.getOrder());
 		wdEnable();
-	}
+	}*/
 	wdReset();
 }
 
@@ -437,8 +442,10 @@ void doAction(byte order) {
 		bool ok = false;
 		int timeout=0;
 		while ( !ok ) {
+			#ifdef POTAR
 			potar.sendOrder(orderValues[order]);
 			ok = potar.checkAck() || ++timeout>2;
+			#endif
 		}
 	}
 }
