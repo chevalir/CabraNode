@@ -207,13 +207,15 @@ public:
 		dallasSensors.requestTemperatures();
 		rawValue = dallasSensors.getTempCByIndex(this->index);
 
-		if ( isnan(rawValue) || rawValue < -10 || rawValue == 85 || rawValue > 125 ) {
+		if ( isnan(rawValue) || rawValue < -55 || rawValue == 85 || rawValue > 125 ) {
 		#if defined(LOG_WARNING)		
 			Serial.println("DS #") ; Serial.print(this->index) ;
 			Serial.println(" off or error");
 		#endif
 			return READ_ERROR;
 		}
+		//if (ID == 8) rawValue = (17 - rawValue);
+		
 	#if defined(LOG_DEBUG)		
 		Serial.print("DS #") ; Serial.print(this->index);
 		Serial.print(" t="); Serial.println(rawValue);
@@ -223,6 +225,8 @@ public:
 
 
 	/***************************************************************************
+	* read the new value in probe 
+	* return true if the diff with the last value is > to the gap
 	*/
 	bool checkNewValue() {
 	#if defined (LOG_DEBUG)
@@ -230,8 +234,6 @@ public:
 		Serial.print(" Type="); Serial.println(this->getType());
 	#endif
 		int newValue = this->readValue();
-		// @@RC newValue = 100+10*flaseValue++;
-
 	#if defined (LOG_DEBUG)
 		Serial.print("newValue="); Serial.print(newValue);
 		Serial.print(" lastValue="); Serial.println(this->lastValue);
@@ -252,12 +254,14 @@ public:
 			this->lastValue = newValue;
 			Serial.print(" Need to send ="); Serial.println(this->lastValue );
 			this->skeepCount = 0;
+			// more than one return
 			return true;
 		} else {
 		#if defined (LOG_DEBUG)
 			Serial.print("No Change / skeepCount="); Serial.println(this->skeepCount);
 		#endif	
 			this->skeepCount++;
+			// more than one return			
 			return false;
 		}
 
@@ -305,10 +309,10 @@ DHT dhtprobe(DHT_PIN, DHT22);
 
 unsigned long tempLastCheckProbe = 0 ;
 
-//unsigned long checkProbFreq = 5*60000; //5 * 1 minutes
-unsigned long checkProbFreq = 50000; //10 sec
+unsigned long checkProbFreq = 5*60000; //10 * 1 minutes
+//unsigned long checkProbFreq = 50000;  //10 sec
 
-const byte SKEEP_MAX = 3;
+const byte SKEEP_MAX = 6;
 
 // Command group
 // 0 = inputPin, 1
@@ -467,9 +471,9 @@ void sendAllProbeValues(byte nbTotalProbe) {
 		ptrProbe = ptrProbes[numProbe];
 		bool needToSend = ptrProbe->checkNewValue();
 		if ( needToSend ) {
-															#if defined(LOG_INFO)		
+			#if defined(LOG_INFO)		
 			Serial.println(ptrProbe->toString());
-															#endif
+			#endif
 			sendProbeValue(ptrProbe, true);
 		}
 	}
@@ -539,6 +543,9 @@ int sendProbeValue( Probe* theProbe, bool aSend ) {
 	int decValueD;
 	int aValue = theProbe->lastValue;
 	bool positive = aValue > 0;
+	if ( ! positive ) aValue = 0 - aValue;
+	
+	
 	int tempValue;
 	#if defined(LOG_INFO)	
 	Serial.print(">>Probe:" ); Serial.print(theProbe->ID);
