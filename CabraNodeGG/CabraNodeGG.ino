@@ -28,7 +28,7 @@
 #define LOG_INFO 1
 // define LOG_WARNING 1
 
-#define NDSPROBE 2 // Number of DS18B20 connected to
+#define NDSPROBE 3 // Number of DS18B20 connected to
 #define NDHT 0 // Number of DHT22 connected to
 // PIN constantes
 #define RFRX_PIN 2   // 3 		// RF433 receiver
@@ -281,8 +281,15 @@ private:
 
 };
 
-
-// GLOBAL constantes
+//*$****************************************************************************
+//   _____ _       _           _   _   _       _                 
+//  |  __ \ |     | |         | | | | | |     | |                
+//  | |  \/ | ___ | |__   __ _| | | | | | __ _| |_   _  ___  ___ 
+//  | | __| |/ _ \| '_ \ / _` | | | | | |/ _` | | | | |/ _ \/ __|
+//  | |_\ \ | (_) | |_) | (_| | | \ \_/ / (_| | | |_| |  __/\__ \
+//   \____/_|\___/|_.__/ \__,_|_|  \___/ \__,_|_|\__,_|\___||___/
+//                                                               
+//     
 
 const unsigned int READ_ERROR = 9999;
 
@@ -309,10 +316,10 @@ DHT dhtprobe(DHT_PIN, DHT22);
 
 unsigned long tempLastCheckProbe = 0 ;
 
-unsigned long checkProbFreq = 5*60000; //10 * 1 minutes
+unsigned long checkProbFreq = 10*60000; //10 * 1 minutes
 //unsigned long checkProbFreq = 50000;  //10 sec
 
-const byte SKEEP_MAX = 6;
+const byte SKEEP_MAX = 5;
 
 // Command group
 // 0 = inputPin, 1
@@ -375,6 +382,7 @@ void setup() {
 	Serial.println("start main loop");
 	#endif
 	wdEnable();
+	tempLastCheckProbe = millis() - checkProbFreq + 10000;
 } // End Of void setup()
 
 
@@ -391,7 +399,7 @@ void loop(){
 	wdReset();
 
 	// manage temp / Humidity transmit
-	if ((millis() - tempLastCheckProbe) > (checkProbFreq / 2) ) {
+	if ((millis() - tempLastCheckProbe) > checkProbFreq ) {
 		sendAllProbeValues(nbDSProbeCount + NDHT*2);
 		tempLastCheckProbe = millis();
 		itsTimeForTemp = !itsTimeForTemp;
@@ -468,14 +476,17 @@ void doAction(byte order) {
 void sendAllProbeValues(byte nbTotalProbe) {
 	Probe* ptrProbe;
 	for ( int numProbe = 0;  numProbe <nbTotalProbe ; numProbe++) {
+		wdReset();
 		ptrProbe = ptrProbes[numProbe];
 		bool needToSend = ptrProbe->checkNewValue();
+		wdReset();
 		if ( needToSend ) {
 			#if defined(LOG_INFO)		
 			Serial.println(ptrProbe->toString());
 			#endif
 			sendProbeValue(ptrProbe, true);
 		}
+		
 	}
 }
 
