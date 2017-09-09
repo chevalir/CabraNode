@@ -14,7 +14,7 @@
 //
 //
 // Author  : chevalir
-// version : ExtV3
+// version : ExtV5
 /*
 http://patorjk.com/software/taag/#p=display&v=3&c=c%2B%2B&f=Doom&t=TypeHere
 */
@@ -79,15 +79,14 @@ int probeIDOffset[NDSPROBE + NDHT*2] = {0, 1 , 2, 3};
 // type off probe D for DS18B20, T for DHT22 Temp, H = DHT22 Humidity
 int probeType[NDSPROBE + NDHT*2] = {'D','D','T','H'};
 int lastValue[NDSPROBE + NDHT*2]   = {9000, 9000, 9000, 9000}; // last temperature and humidity vales sent
-byte skeepCount[NDSPROBE + NDHT*2] = {0, 0, 0, 0};  // count send skeeped due to no change
+byte skeepCount[NDSPROBE + NDHT*2] = {11, 11, 11, 11};  // count send skeeped due to no change set to 11 to
+                                                        // force send after setup
 
 unsigned long tempLastCheckProbe = 0 ;
 unsigned long tempLastSendState = 0 ;
 
-unsigned long checkProbFreq = 1*60000; //N * 1 minutes
-
-
-const byte SKEEP_MAX = 10;
+unsigned long checkProbFreq = 5*60000; //N * 1 minutes
+const byte SKEEP_MAX = 10;  // max time to send update is checkProbFreq * SKEEP_MAX
 
 //bool itsTimeToSend = true;
 bool itsTimeForTemp = false;
@@ -143,6 +142,8 @@ void setup() {
 	#if defined(LOG)		
 	logBuildVersion();
 	#endif
+	Serial.print( checkProbFreq, DEC  );
+	Serial.println("  -------------checkProbFreq");
 
 	#if defined(ledPin)
 	blinkLed(2, 10);
@@ -181,7 +182,7 @@ void loop(){
 		long diff = currentMillis - oldMillis;
 		if (diff > 10) {
 			Serial.print( currentMillis - oldMillis );
-			Serial.println("  -------------time reset");
+			Serial.println("  -------------diff time");
 		}
 		oldMillis = currentMillis;
 	#endif
@@ -204,7 +205,7 @@ void loop(){
 	
 	if ((currentMillis - tempLastCheckProbe) > checkProbFreq ) {		
 	#if defined(LOG_INFO)		
-		Serial.println("****************************************************"); 
+		Serial.println("*********************** tempLastCheckProbe *****************************"); 
 		Serial.println();
 	#endif	
 		sendAllProbeValues(NDSPROBE + NDHT*2);
@@ -280,7 +281,7 @@ void sendAllProbeValues(byte nbTotalProbe) {
 }
 
 void sendProbeValues(int lProbeNum) {
-	//@@TODO send only if change
+	// sent only when change detected 
 
 	#if defined (LOG_DEBUG)
 	Serial.print("sendProbeValues #"); Serial.print(lProbeNum);
@@ -435,10 +436,10 @@ int sendProbeValue( byte aProbeNum, int aValue, bool aSend ) {
 		#endif
 		if ( lastValue[aProbeNum] == 9000 ) {
 			Serial.println("READ_ERROR 99");
-			tempValue = 95;
+			tempValue = 99;
 		} else {
 			Serial.print("READ_ERROR 98"); Serial.println(lastValue[aProbeNum]);
-			tempValue = 90;
+			tempValue = 99;
 		}
 			
 		//tempValue = 99;
@@ -548,7 +549,7 @@ void logBuildVersion (void) {
 	Serial.print("\nSketch: "); Serial.print(the_sketchname);
 	Serial.print(" build:"); Serial.print(__DATE__);
 	Serial.print(" / "); Serial.print(__TIME__);
-	Serial.println("\n start setup");
+	Serial.println("\n end setup");
 }
 
 /*******************************************************************************
