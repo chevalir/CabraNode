@@ -44,7 +44,7 @@ const unsigned int READ_ERROR = 9999;
 #define RFTX_PIN 7 // D7 Some time on D8 depend of the probe 433 transmiter
 #define ONEWIRE_PIN 9 // DS18B20 temperature probe.
 #define DHT_PIN 2           // DTH 22 Probe
-//#define ledPin 13
+#define ledPin 13
 #define STATUS_PIN 3  // Physical pin on arduino
 #define STATUS_VPIN 0 // Virtual Pin on Arduidom
 
@@ -79,13 +79,13 @@ int probeIDOffset[NDSPROBE + NDHT*2] = {0, 1 , 2, 3};
 // type off probe D for DS18B20, T for DHT22 Temp, H = DHT22 Humidity
 int probeType[NDSPROBE + NDHT*2] = {'D','D','T','H'};
 int lastValue[NDSPROBE + NDHT*2]   = {9000, 9000, 9000, 9000}; // last temperature and humidity vales sent
-byte skeepCount[NDSPROBE + NDHT*2] = {11, 11, 11, 11};  // count send skeeped due to no change set to 11 to
+byte skeepCount[NDSPROBE + NDHT*2] = {0, 0, 0, 0};  // count send skeeped due to no change set to 11 to
                                                         // force send after setup
 
 unsigned long tempLastCheckProbe = 0 ;
 unsigned long tempLastSendState = 0 ;
 
-unsigned long checkProbFreq = 5*60000; //N * 1 minutes
+unsigned long checkProbFreq = 1*60000; //N * 1 minutes
 const byte SKEEP_MAX = 10;  // max time to send update is checkProbFreq * SKEEP_MAX
 
 //bool itsTimeToSend = true;
@@ -145,9 +145,7 @@ void setup() {
 	Serial.print( checkProbFreq, DEC  );
 	Serial.println("  -------------checkProbFreq");
 
-	#if defined(ledPin)
-	blinkLed(2, 10);
-	#endif
+	blinkLed(2, 70);
 	
 	wdEnable();
 	// FD:12802190:A:100:P:4
@@ -192,16 +190,16 @@ void loop(){
 		manageInput();
 	}
 	wdReset();	
-
 	
 	// manage status to send
 	if ((currentMillis - tempLastSendState) > stateSendFreq && isStatusChanged) {
 		send2RF(true , STATUS_VPIN, aState, PROBE_ID, false);
 		isStatusChanged = false;
 		tempLastSendState = currentMillis;
+		blinkLed(3, 20);
+
 	}
 	wdReset();	
-	
 	
 	if ((currentMillis - tempLastCheckProbe) > checkProbFreq ) {		
 	#if defined(LOG_INFO)		
@@ -210,6 +208,7 @@ void loop(){
 	#endif	
 		sendAllProbeValues(NDSPROBE + NDHT*2);
 		tempLastCheckProbe = currentMillis;
+		blinkLed(5, 10);
 	}
 }
 
@@ -222,16 +221,16 @@ void loop(){
 //  |_.__/|_|_| |_|_|\_\_____/\___|\__,_|
 //
 //
-#if defined(ledPin)
 void blinkLed(int repeat, int time) {
+#if defined(ledPin)
 	for (int i = 0; i < repeat; i++) {
 		delay(time);
 		digitalWrite(ledPin, HIGH);
 		delay(time);
 		digitalWrite(ledPin, LOW);
 	}
-}
 #endif
+}
 
 
 //   _____                  _
@@ -432,13 +431,16 @@ int sendProbeValue( byte aProbeNum, int aValue, bool aSend ) {
 
 	// bad values returned by the sensor >-10 or 85
 	if ( aValue == READ_ERROR ) {
-		#if defined(LOG_INFO)		
-		#endif
 		if ( lastValue[aProbeNum] == 9000 ) {
-			Serial.println("READ_ERROR 99");
+		#if defined(LOG_INFO)		
+			Serial.println("READ_ERROR 99");Serial.println(lastValue[aProbeNum]);
+		#endif
+
 			tempValue = 99;
 		} else {
-			Serial.print("READ_ERROR 98"); Serial.println(lastValue[aProbeNum]);
+		#if defined(LOG_INFO)		
+			Serial.println("READ_ERROR 98");Serial.println(lastValue[aProbeNum]);
+		#endif
 			tempValue = 99;
 		}
 			
