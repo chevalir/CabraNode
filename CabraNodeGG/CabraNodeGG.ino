@@ -31,8 +31,8 @@
 #define NDSPROBE 3 // Number of DS18B20 connected to
 #define NDHT 0 // Number of DHT22 connected to
 // PIN constantes
-#define RFRX_PIN 2   // 3 		// RF433 receiver
-#define RFTX_PIN 7   // 4		// RF433 transmiter
+#define RFRX_PIN 2   // RF433 receiver
+#define RFTX_PIN 7   // RF433 transmiter
 #define LED_PIN 13
 const byte ONEWIRE_PIN = 9;
 
@@ -137,11 +137,7 @@ private:
 			logRFMessage(RFLastSender, lRFGroup,RFLastReceptor, RFOnOff);
         #endif
 			ret = true;
-		} else {
-			// ****** DDDDDDDEBUG ****************
-			// TO BE REMOVED **********************
-			// delay(10000);
-		}
+		} 
 		mySwitch.resetAvailable();
 		return ret;
 	}
@@ -162,11 +158,8 @@ private:
 
 class Probe {
 	static const unsigned int READ_ERROR = 9999;
-	//static byte nbDSProbeCount;
 	static const byte SKEEP_MAX = 3;
-	//static DallasTemperature *ptrSensor;
 public:
-	// static DallasTemperature *ptrSensor;
 	static const byte DS18B20 = 0;
 	static const byte DHT_H = 1;
 	static const byte DHT_T = 2;
