@@ -85,7 +85,7 @@ byte skeepCount[NDSPROBE + NDHT*2] = {0, 0, 0, 0};  // count send skeeped due to
 unsigned long tempLastCheckProbe = 0 ;
 unsigned long tempLastSendState = 0 ;
 
-unsigned long checkProbFreq = 1*60000; //N * 1 minutes
+unsigned long checkProbFreq = 5*60000; //N * 1 minutes
 const byte SKEEP_MAX = 10;  // max time to send update is checkProbFreq * SKEEP_MAX
 
 //bool itsTimeToSend = true;
