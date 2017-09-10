@@ -1,42 +1,39 @@
 //------------------------------------------------------------------------------
-//   _____       _               _   _           _      _____ _____
-//  /  __ \     | |             | \ | |         | |    |  __ \  __ \
-//  | /  \/ __ _| |__  _ __ __ _|  \| | ___   __| | ___| |  \/ |  \/
-//  | |    / _` | '_ \| '__/ _` | . ` |/ _ \ / _` |/ _ \ | __| | __
-//  | \__/\ (_| | |_) | | | (_| | |\  | (_) | (_| |  __/ |_\ \ |_\ \
-//   \____/\__,_|_.__/|_|  \__,_\_| \_/\___/ \__,_|\___|\____/\____/
-//
-//
+//   _____       _               _   _           _      _____ _____ ___  ___
+//  /  __ \     | |             | \ | |         | |    |  __ \  __ \|  \/  |
+//  | /  \/ __ _| |__  _ __ __ _|  \| | ___   __| | ___| |  \/ |  \/| .  . |
+//  | |    / _` | '_ \| '__/ _` | . ` |/ _ \ / _` |/ _ \ | __| | __ | |\/| |
+//  | \__/\ (_| | |_) | | | (_| | |\  | (_) | (_| |  __/ |_\ \ |_\ \| |  | |
+//   \____/\__,_|_.__/|_|  \__,_\_| \_/\___/ \__,_|\___|\____/\____/\_|  |_/
+//                                                                          
 // Cabra Node Garage et Meteo....
 //
 // Author  : chevalir
-// version : SDB
+// version : 1.0
 //------------------------------------------------------------------------------
 /*
  http://patorjk.com/software/taag/#p=display&v=3&c=c%2B%2B&f=Doom&t=TypeHere
 */
 //------------------------------------------------------------------------------
 #include <Arduino.h>
-#include <avr/wdt.h> // watchDog API
+//#include <avr/wdt.h> // watchDog API
 
 ////////////////////////////////////////////////////////////////////////////////
 #include "Arduidom_Radio.h"
 
 // DEBUG LEVEL
 #define LOG 1
-#define LOG_DEBUG 1
+//#define LOG_DEBUG 1
 #define LOG_INFO 1
 // define LOG_WARNING 1
 
-#define NDSPROBE 0 // Number of DS18B20 connected to
+#define NDSPROBE 1 // Number of DS18B20 connected to
 #define NDHT 1 // Number of DHT22 connected to
 // PIN constantes
-// #define RFRX_PIN 2   // RF433 receiver
-//@RC  #define RFTX_PIN 7   // RF433 transmiter
-#define RFTX_PIN 9   // RF433 transmiter
-
+#define RFRX_PIN 2   // RF433 receiver
+#define RFTX_PIN 7   // RF433 transmiter
 #define LED_PIN 13
-// #define ONEWIRE_PIN 9 // @@RC
+#define ONEWIRE_PIN 9 // @@RC
 #define DHT_PIN 10    // DTH 22 Probe @@RC
 
 #ifdef POTAR
@@ -44,6 +41,13 @@
 PotarMaster potar = PotarMaster();
 #endif
 
+
+#define NBMP085 1  // I2C address of BMP085
+
+#ifdef NBMP085
+#include <BMP085.h>
+BMP085 bmp;
+#endif
 
 
 // Dallas DS18B20 temperature sensor bus init
@@ -90,20 +94,17 @@ public:
 	#if defined(RFRX_PIN)		
 		pinMode(RFRX_PIN, INPUT);
 		mySwitch.enableReceive(RFRX_PIN-2);
-		Serial.println("Radio()  enableReceive");
-
     #endif
 	#if defined(RFTX_PIN)		    
 		mySwitch.setRepeatTransmit(RADIO_REPEATS);
 		pinMode(RFTX_PIN, OUTPUT);
 		mySwitch.enableTransmit(RFTX_PIN); // Transmission sur Pin
-		Serial.println("Radio()  enableTransmit");
     #endif		
 	}
 
 	void Radio::send2RF(boolean aFlagGroup, int aValue, int aDecValue, byte aReceiver, boolean aFlagOnOff ) {
 		unsigned long senderID = 9999000 + (aValue*10)+aDecValue;
-	#if defined(LOG_DEBUG)
+	#if defined(LOG_INFO)
 		Serial.print("  >>");
 		logRFMessage(senderID, aFlagGroup,aReceiver, aFlagOnOff);
     #endif 
@@ -148,23 +149,19 @@ private:
 			RFLastReceptor =  lRFAddr % 100;
 			RFOnOff = (lRFAddr - RFLastReceptor) / 100;
 
-		#if defined(LOG_DEBUG)
+		#if defined(LOG_INFO)
 			Serial.print("<<  ");
 			logRFMessage(RFLastSender, lRFGroup,RFLastReceptor, RFOnOff);
         #endif
 			ret = true;
-		} else {
-			// ****** DDDDDDDEBUG ****************
-			// TO BE REMOVED **********************
-			// delay(10000);
-		}
+		} 
 		mySwitch.resetAvailable();
 		return ret;
 	}
 
 
 
-#if defined (LOG_DEBUG)
+#if defined (LOG_INFO)
 	void logRFMessage(unsigned long aSender, byte aGroup, byte aReceptor, byte aOnOff ) {
 		Serial.print(aSender);
 		Serial.print(" G:");Serial.print(aGroup);
@@ -183,6 +180,7 @@ public:
 	static const byte TypeDS = 0;
 	static const byte TypeDHTH = 1;
 	static const byte TypeDHTT = 2;
+	static const byte TypeBMP085 = 3;
 
 	int gapMin =0;
 	byte ID = 0;
@@ -191,26 +189,21 @@ public:
 	byte skeepCount = 0;
 	byte skeepMax = SKEEP_MAX;
 
-	Probe::Probe(byte newType, byte newID, byte newIndex){
+	Probe::Probe(byte newType, byte newID, byte newIndex, byte newGape){
 		type = newType;
 		ID = newID;
 		index = newIndex;
-		if (newType == TypeDHTH) {
-			gapMin = 100; // 1%
-		} else {
-			gapMin = 10; // 0.1 °C
-		}
+		gapMin = newGape;
 	}
-	Probe::Probe(byte newType, byte newID):Probe(newType, newID,0){
-	}
-
-	Probe::Probe():Probe(TypeDS, 0, 0){
-	}
-	/**
+	/** GET TYPE
 	*/
 	byte Probe::getType(){
 		return this->type;
 	}
+	
+	/**  readValue ()
+	    must be define by each real probe. 
+	*/
 	virtual int Probe::readValue()=0;
 
 	/*************************************************************************
@@ -218,15 +211,15 @@ public:
 	* return true if the diff with the last value is > to the gap
 	*/
 	bool checkNewValue() {
-	#if defined (LOG_DEBUG)
-		Serial.print("checkNewValue #"); Serial.print(this->index);
-		Serial.print(" Type="); Serial.println(this->getType());
-	#endif
+	    #if defined (LOG_INFO)
+		Serial.print("\n checkNewValue #"); Serial.println(this->index);
+		//Serial.print(" Type="); Serial.println(this->getType());
+	    #endif
 		int newValue = readValue();
-	#if defined (LOG_DEBUG)
-		Serial.print("newValue="); Serial.print(newValue);
-		Serial.print(" lastValue="); Serial.println(this->lastValue);
-	#endif	
+	    #if defined (LOG_INFO)
+		Serial.print("newV="); Serial.print(newValue);
+		Serial.print(" lastV="); Serial.println(this->lastValue);
+	    #endif	
 
 		long gap = 0;
 		if ((this->lastValue != newValue)) {
@@ -241,13 +234,13 @@ public:
 		        || this->skeepCount > SKEEP_MAX // send value every 20 min ( depend of conf )
 		   ) {
 			this->lastValue = newValue;
-			Serial.print(" Need to send ="); Serial.println(this->lastValue );
+			Serial.print("Need2send="); Serial.println(this->lastValue );
 			this->skeepCount = 0;
 			// more than one return
 			return true;
 		} else {
 		#if defined (LOG_DEBUG)
-			Serial.print("No Change / skeepCount="); Serial.println(this->skeepCount);
+			Serial.print("No Change Time="); Serial.println(this->skeepCount);
 		#endif	
 			this->skeepCount++;
 			// more than one return			
@@ -273,30 +266,26 @@ private:
 class ProbeDS : public Probe  {
 	
 public:
-	ProbeDS::ProbeDS(byte newID, byte newIndex): Probe(Probe::TypeDS,  newID,  newIndex){
+	ProbeDS::ProbeDS(byte newID, byte newIndex): Probe(Probe::TypeDS,  newID,  newIndex, 10){
 	}	
 	
 	int ProbeDS::readValue() {
 	#if defined (LOG_DEBUG)
-		Serial.println("ProbeDS::readValue()");
+		Serial.println("DS::readValue()");
 	#endif
 		
 		// *** MORE THAN ONE RETURN ****
 		float rawValue = NAN;
 		dallasSensors.requestTemperatures();
 		rawValue = dallasSensors.getTempCByIndex(this->index);
-
 		if ( isnan(rawValue) || rawValue < -55 || rawValue == 85 || rawValue > 125 ) {
 		#if defined(LOG_WARNING)		
-			Serial.println("DS #") ; Serial.print(this->index) ;
-			Serial.println(" off or error");
+			Serial.print("DS#") ; Serial.print(this->index) ; Serial.println(" off or err");
 		#endif
 			return Probe::READ_ERROR;
-		}
-		//if (ID == 8) rawValue = (17 - rawValue);
-		
-	#if defined(LOG_DEBUG)		
-		Serial.print("DS #") ; Serial.print(this->index);
+		}		
+	#if defined(LOG_INFO)		
+		Serial.print("DS#") ; Serial.print(this->index);
 		Serial.print(" t="); Serial.println(rawValue);
 	#endif
 		return rawValue*100;
@@ -308,13 +297,13 @@ public:
 class ProbeDHTT : public Probe  {
 	
 public:
-	ProbeDHTT::ProbeDHTT(byte newID, byte newIndex): Probe(Probe::TypeDHTT,  newID,  newIndex){
+	ProbeDHTT::ProbeDHTT(byte newID, byte newIndex):Probe(Probe::TypeDHTT,  newID,  newIndex , 10){
 	}	
 		
 	int ProbeDHTT::readValue() {
 		// Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
 	#if defined (LOG_DEBUG)
-		Serial.println("ProbeDHTT::readValue()");
+		Serial.println("DHTT::readValue()");
 	#endif
 		
 		float rawValue = dhtprobe.readTemperature(); 
@@ -339,12 +328,11 @@ public:
 
 class ProbeDHTH : public Probe  {
 public:
-	ProbeDHTH::ProbeDHTH(byte newID, byte newIndex): Probe(Probe::TypeDHTH,  newID,  newIndex){
-	}	
+	ProbeDHTH::ProbeDHTH(byte newID, byte newIndex): Probe(Probe::TypeDHTH,  newID,  newIndex, 100){}	
 		
 	int ProbeDHTH::readValue() {
 	#if defined (LOG_DEBUG)
-		Serial.println("ProbeDHTH::readValue()");
+		Serial.println("ProbeDHTH::readValue");
 	#endif
 		
 		// Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
@@ -369,8 +357,45 @@ public:
 };
 #endif
 
+class ProbeBMP085 : public Probe  {
+public:
+	ProbeBMP085::ProbeBMP085(byte newID, byte newIndex): Probe(Probe::TypeBMP085,  newID,  newIndex, 50){	}
+	
+	/* READVALUE */
+	int ProbeBMP085::readValue() {
+		#if defined (LOG_DEBUG)
+		Serial.println("BMP085::readValue");
+		#endif
+		long seaLevelPressure = bmp.getSeaLevel(bmp.readFloatPressure(), 235);
+		#if defined(LOG_INFO)		
+		Serial.print("seaPr=");
+		Serial.println(seaLevelPressure/100);
+		#endif
+  		
+		return seaLevelPressure - 100000; // 
+	}
+		
+};
 
-
+class ProbeBMP085T : public Probe  {
+public:
+	ProbeBMP085T::ProbeBMP085T(byte newID, byte newIndex): Probe(Probe::TypeBMP085,  newID,  newIndex, 10){	}
+	
+	/* READVALUE */
+	int ProbeBMP085T::readValue() {
+		#if defined (LOG_DEBUG)
+		Serial.println("BMP085::readValue");
+		#endif
+        double realTemperature = bmp.readTemperature();		
+		#if defined(LOG_INFO)		
+		Serial.print("T=");
+		Serial.println(realTemperature);
+		#endif
+  		realTemperature *=100;
+		return realTemperature;
+	}
+		
+};
 
 
 
@@ -384,13 +409,12 @@ public:
 //                                                               
 //     
 
-//@@RC const byte PROBE_ID = 8; // ID of probe beetween 0 and 15
-const byte PROBE_ID = 11; // ID of probe beetween 0 and 15
+const byte PROBE_ID = 8; // ID from 28 To ....
 
 
 Radio* theRadio;
 
-Probe* ptrProbes[NDSPROBE + NDHT*2]; // same value for all
+Probe* ptrProbes[NDSPROBE + NDHT*2 + NBMP085*2]; // same value for all
 
 
 // minimum gap to send value 10 for 0.1°C, and 100 for 1%
@@ -399,15 +423,15 @@ Probe* ptrProbes[NDSPROBE + NDHT*2]; // same value for all
 unsigned long tempLastCheckProbe = 0 ;
 
 unsigned long checkProbFreq = 10*60000; //10 * 1 minutes
-//unsigned long checkProbFreq = 50000;  //10 sec
+//unsigned long checkProbFreq = 30000;  //30 sec
 
 const byte SKEEP_MAX = 5;
 
 // Command group
 // 0 = inputPin, 1
-byte 	nbDSProbeCount = 0;
-long 	currentMillis, oldMillis = 0;
-boolean itsTimeForTemp = false;
+byte nbTotalProbe = 0;
+
+long currentMillis, oldMillis = 0;
 
 //            _
 //           | |
@@ -422,58 +446,66 @@ void setup() {
 	pinMode(LED_PIN, OUTPUT);
 	blinkLed(2, 10);
 	#endif
-	wdDisable();
 	#if defined(LOG)	
 	Serial.begin(115200); // Init du Port serie/USB
 	logBuildVersion();
 	#endif
 
-
-    #if defined (LOG_INFO)		
-	Serial.println(" :OUTPUT" );
-	#endif
-
 	//--------------------------------------------------------------------------------------------------------------------------------------------------
 	delay(1000);
-    theRadio = new Radio();
-    
-	#if (NDSPROBE > 0)
-	dallasSensors.begin();
-	nbDSProbeCount = dallasSensors.getDeviceCount();  // @@RCSIMU nbDSProbeCount = 3;
-	#if defined(LOG_INFO)		
-	Serial.println("Nb DS Sensor:"); Serial.println(nbDSProbeCount);
-	#endif
-	// just to avoid probleme with some sensor where the first value returned is not correct
-	for (int indexprobe = 0 ; indexprobe < NDSPROBE; indexprobe++) {
-		//getDSTemperature(indexprobe);
-		ptrProbes[indexprobe] = new Probe (Probe::TypeDS, PROBE_ID+indexprobe , indexprobe);
-		ptrProbes[indexprobe]->readValue();
-		Serial.println(ptrProbes[indexprobe]->toString());
-	}
-	#endif
-	#if (NDHT > 0)	
+    theRadio = new Radio();	
+	#if (NDHT > 0)	// manage only one DHT
 	dhtprobe.begin();
-	int indexprobe = NDSPROBE; // to swich to the first index after DS probe 
-	ptrProbes[indexprobe] = new ProbeDHTT (PROBE_ID+indexprobe , indexprobe);
-	ptrProbes[indexprobe]->readValue();
-	Serial.println(ptrProbes[indexprobe]->toString());
-	indexprobe++;
-	ptrProbes[indexprobe] = new ProbeDHTH (PROBE_ID+indexprobe , indexprobe);
-	ptrProbes[indexprobe]->readValue();
-	Serial.println(ptrProbes[indexprobe]->toString());
+	ptrProbes[nbTotalProbe] = new ProbeDHTT (PROBE_ID+nbTotalProbe , nbTotalProbe);
+	ptrProbes[nbTotalProbe]->readValue();
+	Serial.println(ptrProbes[nbTotalProbe]->toString());
+	nbTotalProbe++;
+	ptrProbes[nbTotalProbe] = new ProbeDHTH (PROBE_ID+nbTotalProbe , nbTotalProbe);
+	ptrProbes[nbTotalProbe]->readValue();
+	Serial.println(ptrProbes[nbTotalProbe]->toString());
+	nbTotalProbe++;
 	#endif
 
+	#if (NBMP085 > 0)
+	InitializeBMP085();
+	ptrProbes[nbTotalProbe] = new ProbeBMP085T (PROBE_ID+nbTotalProbe , nbTotalProbe);
+	ptrProbes[nbTotalProbe]->readValue();
+	Serial.println(ptrProbes[nbTotalProbe]->toString());
+	nbTotalProbe++;
+	ptrProbes[nbTotalProbe] = new ProbeBMP085 (PROBE_ID+nbTotalProbe , nbTotalProbe);
+	ptrProbes[nbTotalProbe]->readValue();
+	Serial.println(ptrProbes[nbTotalProbe]->toString());
+	nbTotalProbe++;	
+	#endif
+	
+	#if (NDSPROBE > 0)
+	dallasSensors.begin();
+	int nbDSProbeCount = dallasSensors.getDeviceCount();  // @@RCSIMU nbDSProbeCount = 3;
+	#if defined(LOG_DEBUG)		
+	Serial.println("Nb DS:"); Serial.println(nbDSProbeCount);
+	#endif
+	// just to avoid probleme with some sensor where the first value returned is not correct
+	int indexDS;
+	for (indexDS = nbTotalProbe ; indexDS < nbTotalProbe+NDSPROBE; indexDS++) {
+		ptrProbes[indexDS] = new ProbeDS (PROBE_ID+indexDS , indexDS);
+		ptrProbes[indexDS]->readValue();
+		Serial.println(ptrProbes[indexDS]->toString());
+	}
+	nbTotalProbe += NDSPROBE;	
+	#endif
+	
 	#if defined(LED_PIN)
 	pinMode(LED_PIN, OUTPUT);
 	blinkLed(2, 10);
 	#endif
 
 	// Start
-	#if defined(LOG)		
-	Serial.println("start main loop");
+	#if defined(LOG)
+	Serial.print("Start loop ProbesNb="); Serial.println(nbTotalProbe);
 	#endif
-	wdEnable();
+	
 	tempLastCheckProbe = millis() - checkProbFreq + 10000;
+
 } // End Of void setup()
 
 
@@ -487,15 +519,18 @@ void setup() {
 //
 
 void loop(){
-	wdReset();
-
-	// manage temp / Humidity transmit
+	// manage all probes data transmit
 	if ((millis() - tempLastCheckProbe) > checkProbFreq ) {
-		sendAllProbeValues(nbDSProbeCount + NDHT*2);
+		sendAllProbes(nbTotalProbe);
 		tempLastCheckProbe = millis();
-		itsTimeForTemp = !itsTimeForTemp;
+	} else {
+	#if defined (LOG_DEBUG)
+		Serial.print("elpase time:");
+		Serial.print((millis() - tempLastCheckProbe) / 1000 );
+		Serial.print("/"); Serial.println(checkProbFreq / 1000);
+		delay(10000);
+	#endif
 	}
-	wdReset();
 }
 
 //   _     _       _    _              _
@@ -516,57 +551,38 @@ void blinkLed(int repeat, int time) {
 }
 
 
-
-//      | |      / _ \     | | (_)
-//    __| | ___ / /_\ \ ___| |_ _  ___  _ __
-//   / _` |/ _ \|  _  |/ __| __| |/ _ \| '_ \
-//  | (_| | (_) | | | | (__| |_| | (_) | | | |
-//   \__,_|\___/\_| |_/\___|\__|_|\___/|_| |_|
-//
-/******
-**
-*******/
-void doAction(byte order) {
-
-														#if defined(LOG_DEBUG)
-	Serial.print("motor>>");Serial.println(order);
-														#endif
-
-	if (order < 10 ) {
-		bool ok = false;
-		int timeout=0;
-		while ( !ok ) {
-			#ifdef POTAR
-			potar.sendOrder(orderValues[order]);
-			ok = potar.checkAck() || ++timeout>2;
-			#endif
-		}
-	}
-}
-
-//   _____                                   _
-//  |_   _|                                 | |
-//    | | ___ _ __ ___  _ __   ___ _ __ __ _| |_ _   _ _ __ ___
-//    | |/ _ \ '_ ` _ \| '_ \ / _ \ '__/ _` | __| | | | '__/ _ \
-//    | |  __/ | | | | | |_) |  __/ | | (_| | |_| |_| | | |  __/
-//    \_/\___|_| |_| |_| .__/ \___|_|  \__,_|\__|\__,_|_|  \___|
-//                     | |
-//                     |_|
-void sendAllProbeValues(byte nbTotalProbe) {
+//   _____                _  ___  _ _______          _               
+//  /  ___|              | |/ _ \| | | ___ \        | |              
+//  \ `--.  ___ _ __   __| / /_\ \ | | |_/ / __ ___ | |__   ___  ___ 
+//   `--. \/ _ \ '_ \ / _` |  _  | | |  __/ '__/ _ \| '_ \ / _ \/ __|
+//  /\__/ /  __/ | | | (_| | | | | | | |  | | | (_) | |_) |  __/\__ \
+//  \____/ \___|_| |_|\__,_\_| |_/_|_\_|  |_|  \___/|_.__/ \___||___/
+//                                                                   
+//                                                                   
+void sendAllProbes(byte nbProbe) {
 	Probe* ptrProbe;
-	for ( int numProbe = 0;  numProbe <nbTotalProbe ; numProbe++) {
-		wdReset();
+	#if defined(LOG_INFO)		
+	Serial.println("start sendAll...");
+	#endif
+
+	for ( int numProbe = 0;  numProbe <nbProbe ; numProbe++) {
 		ptrProbe = ptrProbes[numProbe];
-		bool needToSend = ptrProbe->checkNewValue();
-		wdReset();
-		if ( needToSend ) {
-			#if defined(LOG_INFO)		
-			Serial.println(ptrProbe->toString());
-			#endif
-			sendProbeValue(ptrProbe, true);
-		}
-		
+		//if (ptrProbe->getType() == Probe::TypeBMP085) {
+			bool needToSend = ptrProbe->checkNewValue();
+			if ( needToSend ) {
+				#if defined(LOG_INFO)		
+				Serial.println(ptrProbe->toString());
+				#endif
+				sendProbeValue(ptrProbe, true);
+				delay(5000);			
+			} 
+		//}
 	}
+
+	#if defined(LOG_DEBUG)		
+	Serial.println("end sendAll...");
+	#endif
+
 }
 
 //                      _______          _           _   _       _
@@ -618,7 +634,8 @@ int sendProbeValue( Probe* theProbe, bool aSend ) {
 	// return temperature to -0 in case of error
 #if defined(LOG_INFO)		
 	Serial.print(" ID: " ); Serial.print( theProbe->ID, DEC);
-	Serial.print(" value: " );
+	Serial.print(" (Pin " ); Serial.print( theProbe->ID+20, DEC);	
+	Serial.print(") value: " );
 	Serial.print(tempValue); Serial.print("."); Serial.print(decValueD);
 	Serial.print(" Signe: " ); Serial.println( positive, DEC);
 #endif
@@ -628,42 +645,6 @@ int sendProbeValue( Probe* theProbe, bool aSend ) {
 	}
 	return tempValue*100;
 }
-
-
-//                 _       _    ______
-//                | |     | |   |  _  \
-//  __      ____ _| |_ ___| |__ | | | |___   __ _
-//  \ \ /\ / / _` | __/ __| '_ \| | | / _ \ / _` |
-//   \ V  V / (_| | || (__| | | | |/ / (_) | (_| |
-//    \_/\_/ \__,_|\__\___|_| |_|___/ \___/ \__, |
-//                                           __/ |
-//                                          |___/
-void wdDisable() {
-	// immediately disable watchdog timer so set will not get interrupted
-	wdt_reset();
-	wdt_disable();
-
-}
-
-void wdEnable() {
-	// enable the watchdog timer. There are a finite number of timeouts allowed (see wdt.h).
-	// Notes I have seen say it is unwise to go below 250ms as you may get the WDT stuck in a
-	// loop rebooting.
-	// The timeouts I'm most likely to use are:
-	// WDTO_1S
-	// WDTO_2S
-	// WDTO_4S
-	// WDTO_8S
-
-	delay(2000);
-	wdt_enable(WDTO_8S);
-
-}
-
-void wdReset() {
-	wdt_reset();
-}
-
 
 
 //  ______       _ _     _     ___   _               _
@@ -689,15 +670,61 @@ void logBuildVersion (void) {
 	Serial.print(" / "); Serial.print(__TIME__);
 	Serial.println("\n start setup");
 }
-
-/*******************************************************************************
-*******************************************************************************/
-/*void logRFMessage(unsigned long aSender, byte aGroup, byte aReceptor, byte aOnOff ) {
-	Serial.print(aSender);
-	Serial.print(" G:");Serial.print(aGroup);
-	Serial.print(" R:");Serial.print(aReceptor);
-	Serial.print(" o:");Serial.println(aOnOff);
-}*/
 #endif
+
+
+
+
+//  _________  _________   _____ _____  _____ 
+//  | ___ \  \/  || ___ \ |  _  |  _  ||  ___|
+//  | |_/ / .  . || |_/ / | |/' |\ V / |___ \ 
+//  | ___ \ |\/| ||  __/  |  /| |/ _ \     \ \
+//  | |_/ / |  | || |     \ |_/ / |_| |/\__/ /
+//  \____/\_|  |_/\_|      \___/\_____/\____/ 
+//                                            
+//   
+
+
+#if defined (LOG)
+void checkSettingsBMP085()
+{
+	Serial.print("BMP085 v:");
+	long bmpVersion = bmp.getVersion();
+	Serial.print(bmpVersion >> 8); Serial.print("."); Serial.print(bmpVersion & 0xFF);
+	Serial.print(" (0x"); Serial.print(bmpVersion, HEX); Serial.print(") oversampling:");
+	// Serial.print("Oversampling: ");
+	Serial.println(bmp.getOversampling());
+	//Software Oversampling: 
+	Serial.print("over:");
+	Serial.println(bmp.getSoftwareOversampling());
+}
+#endif
+
+void InitializeBMP085() {
+	  // Initialize BMP085 or BMP180 sensor
+#if defined(LOG_INFO)		
+  Serial.println("InitializeBMP085");
+#endif
+
+  // Ultra high resolution: BMP085_ULTRA_HIGH_RES
+  // (default) High resolution: BMP085_HIGH_RES
+  // Standard: BMP085_STANDARD
+  // Ultra low power: BMP085_ULTRA_LOW_POWER
+  int timeout = 0;
+  while(!bmp.begin(BMP085_ULTRA_HIGH_RES) && (timeout<10) )
+  {
+    Serial.println("init BMP085 error");
+    timeout += 1;
+    delay(500);
+  }
+
+  // Enable or disable SOSS (Software oversampling)- Use with BMP085_ULTRA_HIGH_RES !
+  // For applications where a low noise level is critical, averaging is recommended if the lower bandwidth is acceptable
+  // Conversion time pressure: 76.5ms, RMS noise 0.02 hPA / 0.17 m
+  bmp.setSoftwareOversampling(0);
+
+  // Check settings
+  checkSettingsBMP085();
+}
 
 
