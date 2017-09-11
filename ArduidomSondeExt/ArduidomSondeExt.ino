@@ -1,9 +1,3 @@
-//
-
-
-		// @TODO potencial infini LOOP  looking for @TODO
-
-
 //------------------------------------------------------------------------------
 //  ____________ _   _           _
 //  | ___ \  ___| \ | |         | |
@@ -44,16 +38,21 @@ const unsigned int READ_ERROR = 9999;
 #define RFTX_PIN 7 // D7 Some time on D8 depend of the probe 433 transmiter
 #define ONEWIRE_PIN 9 // DS18B20 temperature probe.
 #define DHT_PIN 2           // DTH 22 Probe
-#define ledPin 13
+#define LED_PIN 13
 #define STATUS_PIN 3  // Physical pin on arduino
 #define STATUS_VPIN 0 // Virtual Pin on Arduidom
 
-// RADIO RF 433
-const byte RADIO_REPEATS = 10; // Nombre de repetitions des messages Radio
-RCSwitch mySwitch = RCSwitch();
 
 volatile int aState = 0;         // variable for reading the status PIN
 volatile int lastState = 0;
+
+#define NBMP085 1  // number of BMP085 sensor
+
+#if (NBMP085 > 0 )
+#include <BMP085.h>
+BMP085 bmpsensor; // I2C address of BMP085
+#endif
+
 
 // DHT initialisation
 #if (NDHT > 0)
@@ -67,26 +66,24 @@ DHT dhtprobe(DHT_PIN, DHT22);
 #include <DallasTemperature.h>
 
 OneWire oneWire(ONEWIRE_PIN);
-DallasTemperature sensors(&oneWire);
-// int LastDSValue[NDSPROBE];
-byte nbTemperatureSensor = 0;
+DallasTemperature dallasSensors(&oneWire);
 #endif
 
 // minimum gap to send value 10 for 0.1°C, and 100 for 1%
-int gapMin[NDSPROBE + NDHT*2]        = { 10, 10, 10, 100};
+//int gapMin[NDSPROBE + NDHT*2]        = { 10, 10, 10, 100};
 // offset to add to PROBE_ID
-int probeIDOffset[NDSPROBE + NDHT*2] = {0, 1 , 2, 3};
+//int probeIDOffset[NDSPROBE + NDHT*2] = {0, 1 , 2, 3};
 // type off probe D for DS18B20, T for DHT22 Temp, H = DHT22 Humidity
-int probeType[NDSPROBE + NDHT*2] = {'D','D','T','H'};
-int lastValue[NDSPROBE + NDHT*2]   = {9000, 9000, 9000, 9000}; // last temperature and humidity vales sent
-byte skeepCount[NDSPROBE + NDHT*2] = {0, 0, 0, 0};  // count send skeeped due to no change set to 11 to
+//int probeType[NDSPROBE + NDHT*2] = {'D','D','T','H'};
+//int lastValue[NDSPROBE + NDHT*2]   = {9000, 9000, 9000, 9000}; // last temperature and humidity vales sent
+//byte skeepCount[NDSPROBE + NDHT*2] = {0, 0, 0, 0};  // count send skeeped due to no change set to 11 to
                                                         // force send after setup
 
 unsigned long tempLastCheckProbe = 0 ;
 unsigned long tempLastSendState = 0 ;
 
 unsigned long checkProbFreq = 5*60000; //N * 1 minutes
-const byte SKEEP_MAX = 10;  // max time to send update is checkProbFreq * SKEEP_MAX
+//const byte SKEEP_MAX = 10;  // max time to send update is checkProbFreq * SKEEP_MAX
 
 //bool itsTimeToSend = true;
 bool itsTimeForTemp = false;
@@ -94,6 +91,389 @@ bool itsTimeForTemp = false;
 unsigned long stateSendFreq = 2000; // frequency to send temperatures, in milli
 volatile bool isStatusChanged = true;
 long currentMillis, oldMillis = 0;
+
+
+
+//        _                ______          _ _
+//       | |               | ___ \        | (_)
+//    ___| | __ _ ___ ___  | |_/ /__ _  __| |_  ___
+//   / __| |/ _` / __/ __| |    // _` |/ _` | |/ _ \
+//  | (__| | (_| \__ \__ \ | |\ \ (_| | (_| | | (_) |
+//   \___|_|\__,_|___/___/ \_| \_\__,_|\__,_|_|\___/
+//
+//
+class Radio {
+public:
+	static const long HE_IDE = 4988678;  // default HomeEasy ID ( ID oF DIO REF:54791 ;) )
+	static const byte RADIO_REPEATS = 5; // Nombre de repetitions des messages Radio
+	RCSwitch mySwitch;
+	// HomeEasy protocole variable
+	byte RFLastReceptor = 0;
+	unsigned long RFLastSender = 0; // Valeur du Data Recu par 433
+	unsigned long RFLastAddr = 999; // Contains the target Id and the action to do
+	// ON/OFF initialized to "impossible" value
+	byte RFOnOff = 0;
+
+
+	Radio::Radio() {
+		mySwitch = RCSwitch();
+		mySwitch.setProtocol(4);		
+	#if defined(RFRX_PIN)		
+		pinMode(RFRX_PIN, INPUT);
+		mySwitch.enableReceive(RFRX_PIN-2);
+    #endif
+	#if defined(RFTX_PIN)		    
+		mySwitch.setRepeatTransmit(RADIO_REPEATS);
+		pinMode(RFTX_PIN, OUTPUT);
+		mySwitch.enableTransmit(RFTX_PIN); // Transmission sur Pin
+    #endif		
+	}
+
+	void Radio::send2RF(boolean aFlagGroup, int aValue, int aDecValue, byte aReceiver, boolean aFlagOnOff ) {
+		unsigned long senderID = 9999000 + (aValue*10)+aDecValue;
+	#if defined(LOG_INFO)
+		Serial.print("  >>");
+		logRFMessage(senderID, aFlagGroup,aReceiver, aFlagOnOff);
+    #endif 
+
+		//Serial.println("FAKE mySwitch.send");
+		for (int i = 1; i <= RADIO_REPEATS; i++) {
+			mySwitch.send(senderID, aFlagGroup, aReceiver, aFlagOnOff);
+		}
+
+	}
+
+	bool Radio::orderAvailable() {
+		if ( this->mySwitch.available() && isMessage() ) {
+		#if defined(LOG_DEBUG)
+			Serial.print(F("isMessage YES")); Serial.println(RFLastSender == HE_IDE);
+	    #endif 
+			return RFLastSender == HE_IDE;
+		}
+		return false;
+	}
+
+	byte Radio::getOrder() {
+		return RFLastReceptor;
+	}
+
+private:
+	bool Radio::isMessage() {
+		bool ret = false;
+		unsigned long lRFData = this->mySwitch.getReceivedValue();
+		unsigned long lRFAddr = this->mySwitch.getReceivedAddr();
+
+		if ( RFLastSender != lRFData || RFLastAddr != lRFAddr ) {
+		#if defined(LOG_INFO)	
+			Serial.println(F("MySwitch available"));
+		#endif
+			RFLastSender = lRFData;
+			RFLastAddr = lRFAddr;
+			bool lRFGroup = lRFAddr > 999;
+			if (lRFGroup) {
+				lRFAddr -= 1000;
+			}
+			RFLastReceptor =  lRFAddr % 100;
+			RFOnOff = (lRFAddr - RFLastReceptor) / 100;
+
+		#if defined(LOG_INFO)
+			Serial.print("<<  ");
+			logRFMessage(RFLastSender, lRFGroup,RFLastReceptor, RFOnOff);
+        #endif
+			ret = true;
+		} 
+		mySwitch.resetAvailable();
+		return ret;
+	}
+
+
+
+#if defined (LOG_INFO)
+	void logRFMessage(unsigned long aSender, byte aGroup, byte aReceptor, byte aOnOff ) {
+		Serial.print(aSender);
+		Serial.print(" G:");Serial.print(aGroup);
+		Serial.print(" R:");Serial.print(aReceptor);
+		Serial.print(" o:");Serial.println(aOnOff);
+	}
+#endif
+
+};
+
+
+/**
+* Generic class probe 
+* usable for DS, DHT and BMP085 probes.
+**/
+
+class Probe {
+	static const byte SKEEP_MAX = 10;
+public:
+	static const unsigned int READ_ERROR = 9999;
+	static const byte TypeDS = 0;
+	static const byte TypeDHTH = 1;
+	static const byte TypeDHTT = 2;
+	static const byte TypeBMP085 = 3;
+
+	int gapMin =0;
+	byte ID = 0;
+	byte index = 0;
+	int lastValue = 9000;
+	byte skeepCount = 0;
+	byte skeepMax = SKEEP_MAX;
+
+	Probe::Probe(byte newType, byte newID, byte newIndex, byte newGape){
+		type = newType;
+		ID = newID;
+		index = newIndex;
+		gapMin = newGape;
+	}
+	/** GET TYPE
+	*/
+	byte Probe::getType(){
+		return this->type;
+	}
+	
+	/**  readValue ()
+	    must be define by each real probe. 
+	*/
+	virtual int Probe::readValue()=0;
+
+	/*************************************************************************
+	* read the new value in probe 
+	* return true if the diff with the last value is > to the gap
+	*/
+	bool checkNewValue() {
+	    #if defined (LOG_INFO)
+		Serial.print("\n checkNewValue #"); Serial.println(this->index);
+		//Serial.print(" Type="); Serial.println(this->getType());
+	    #endif
+		int newValue = readValue();
+	    #if defined (LOG_INFO)
+		Serial.print("newV="); Serial.print(newValue);
+		Serial.print(" lastV="); Serial.println(this->lastValue);
+	    #endif	
+
+		long gap = 0;
+		if ((this->lastValue != newValue)) {
+			gap = abs(this->lastValue - newValue);
+		#if defined (LOG_DEBUG)
+			Serial.print("GapMin="); Serial.print(this->gapMin);
+			Serial.print(" gap="); Serial.println(gap);
+		#endif	
+		}
+		if ( gap >= 3*this->gapMin // send temp when change >= 0.3°
+		        || (gap >= this->gapMin && this->skeepCount > (SKEEP_MAX/2) ) // send low change every 10 min if any (depend of conf)
+		        || this->skeepCount > SKEEP_MAX // send value every 20 min ( depend of conf )
+		   ) {
+			this->lastValue = newValue;
+			Serial.print("Need2send="); Serial.println(this->lastValue );
+			this->skeepCount = 0;
+			// more than one return
+			return true;
+		} else {
+		#if defined (LOG_DEBUG)
+			Serial.print("No Change Time="); Serial.println(this->skeepCount);
+		#endif	
+			this->skeepCount++;
+			// more than one return			
+			return false;
+		}
+
+	}
+
+	String Probe::toString() {
+		String thisStr = "Probe::ID:"; thisStr += this->ID;
+		thisStr += " type:"; thisStr += this->type;
+		thisStr += " gapMin:"; thisStr += this->gapMin;
+		thisStr += " lastValue:"; thisStr += this->lastValue;
+		return thisStr;
+	}
+
+
+private:
+	byte type;
+
+};
+
+#if (NDSPROBE > 0)
+
+/**
+* Manage the Temperature value of DHT22 probe 
+**/
+class ProbeDS : public Probe  {
+	
+public:
+	ProbeDS::ProbeDS(byte newID, byte newIndex): Probe(Probe::TypeDS,  newID,  newIndex, 10){
+	}	
+	
+	int ProbeDS::readValue() {
+	#if defined (LOG_DEBUG)
+		Serial.println("DS::readValue()");
+	#endif
+		
+		// *** MORE THAN ONE RETURN ****
+		float rawValue = NAN;
+		dallasSensors.requestTemperatures();
+		rawValue = dallasSensors.getTempCByIndex(this->index);
+		if ( isnan(rawValue) || rawValue < -55 || rawValue == 85 || rawValue > 125 ) {
+		#if defined(LOG_WARNING)		
+			Serial.print("DS#") ; Serial.print(this->index) ; Serial.println(" off or err");
+		#endif
+			return Probe::READ_ERROR;
+		}		
+	#if defined(LOG_INFO)		
+		Serial.print("DS#") ; Serial.print(this->index);
+		Serial.print(" t="); Serial.println(rawValue);
+	#endif
+		return rawValue*100;
+	}
+	
+};
+#endif
+
+#if (NDHT > 0)
+/**
+* Manage the Humidity value of DHT22 probe 
+**/
+class ProbeDHTT : public Probe  {
+	
+public:
+	ProbeDHTT::ProbeDHTT(byte newID, byte newIndex):Probe(Probe::TypeDHTT,  newID,  newIndex , 10){
+	}	
+		
+	int ProbeDHTT::readValue() {
+		// Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
+	#if defined (LOG_DEBUG)
+		Serial.println("DHTT::readValue()");
+	#endif
+		
+		float rawValue = dhtprobe.readTemperature(); 
+		byte retry = 0;
+		const byte RETRY_MAX = 10;
+	
+		while ( isnan(rawValue) && retry < RETRY_MAX) {		
+			delay(100);
+			rawValue = dhtprobe.readTemperature(); 
+			retry++;
+		}
+		#if defined(LOG_INFO)		
+		Serial.print("DHT T="); Serial.println(rawValue);
+		#endif
+	
+		if (isnan(rawValue)) {
+			return Probe::READ_ERROR;
+		}
+		return rawValue*100;
+	}
+};
+
+/**
+* Manage the Humidity value of DHT22 probe 
+**/
+class ProbeDHTH : public Probe  {
+public:
+	ProbeDHTH::ProbeDHTH(byte newID, byte newIndex): Probe(Probe::TypeDHTH,  newID,  newIndex, 100){}	
+		
+	int ProbeDHTH::readValue() {
+	#if defined (LOG_DEBUG)
+		Serial.println("ProbeDHTH::readValue");
+	#endif
+		
+		// Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
+		float rawValue = dhtprobe.readHumidity();
+		byte retry = 0;
+		const byte RETRY_MAX = 10;
+	
+		while ( isnan(rawValue) && retry < RETRY_MAX) {		
+			delay(100);
+			rawValue = dhtprobe.readHumidity();
+			retry++;
+		}
+		#if defined(LOG_INFO)		
+		Serial.print("DTH H="); Serial.println(rawValue);
+		#endif
+	
+		if (isnan(rawValue)) {
+			return Probe::READ_ERROR;
+		}
+		return rawValue*100;
+	}
+};
+#endif
+
+/**
+* Manage the Pressure value of BMP085T probe 
+**/
+#ifdef NBMP085
+class ProbeBMP085 : public Probe  {
+public:
+	ProbeBMP085::ProbeBMP085(byte newID, byte newIndex): Probe(Probe::TypeBMP085,  newID,  newIndex, 50){	}
+	
+	/* READVALUE */
+	int ProbeBMP085::readValue() {
+		#if defined (LOG_DEBUG)
+		Serial.println("BMP085::readValue");
+		#endif
+		long seaLevelPressure = bmpsensor.getSeaLevel(bmpsensor.readFloatPressure(), 235);
+		#if defined(LOG_INFO)		
+		Serial.print("seaPr=");
+		Serial.println(seaLevelPressure/100);
+		#endif
+  		
+		return seaLevelPressure - 100000; // 
+	}
+		
+};
+
+/**
+* Manage the temperature value of BMP085T probe 
+*/
+class ProbeBMP085T : public Probe  {
+public:
+	ProbeBMP085T::ProbeBMP085T(byte newID, byte newIndex): Probe(Probe::TypeBMP085,  newID,  newIndex, 10){	}
+	
+	/* READVALUE */
+	int ProbeBMP085T::readValue() {
+		#if defined (LOG_DEBUG)
+		Serial.println("BMP085::readValue");
+		#endif
+        double realTemperature = bmpsensor.readTemperature();		
+		#if defined(LOG_INFO)		
+		Serial.print("T=");
+		Serial.println(realTemperature);
+		#endif
+  		realTemperature *=100;
+		return realTemperature;
+	}
+		
+}; // end class ProbeBMP085T
+#endif
+
+
+
+
+//*****************************************************************************
+//   _____ _       _           _   _   _       _                 
+//  |  __ \ |     | |         | | | | | |     | |                
+//  | |  \/ | ___ | |__   __ _| | | | | | __ _| |_   _  ___  ___ 
+//  | | __| |/ _ \| '_ \ / _` | | | | | |/ _` | | | | |/ _ \/ __|
+//  | |_\ \ | (_) | |_) | (_| | | \ \_/ / (_| | | |_| |  __/\__ \
+//   \____/_|\___/|_.__/ \__,_|_|  \___/ \__,_|_|\__,_|\___||___/
+//                                                               
+//     
+
+Radio* theRadio;
+byte nbTotalProbe = 0;
+Probe* ptrProbes[ 0
+		+ NDSPROBE
+		+ NDHT*2
+#ifdef NBMP085
+		+ NBMP085*2
+#endif
+]; // same value for all
+
+
+
 
 //            _
 //           | |
@@ -110,32 +490,44 @@ void setup() {
 	Serial.setTimeout(5); // Timeout 5ms
 	#endif
 
-	pinMode(ONEWIRE_PIN, INPUT);
-	#if defined(ledPin)
-	pinMode(ledPin, OUTPUT);
+	theRadio = new Radio();	
+	#if defined(LED_PIN)
+	pinMode(LED_PIN, OUTPUT);
 	#endif
-	pinMode(STATUS_PIN, INPUT_PULLUP);
 
-	pinMode(RFTX_PIN, OUTPUT);
-	mySwitch.enableTransmit(RFTX_PIN); // Transmission sur Pin
-	mySwitch.setRepeatTransmit(RADIO_REPEATS); // Repete x fois le message
 
+	
 	//--------------------------------------------------------------------------------------------------------------------------------------------------
-	#if (NDSPROBE > 0)
-	sensors.begin();
-	nbTemperatureSensor = sensors.getDeviceCount();
-	#if defined(LOG_INFO)		
-	Serial.print("Nb DS Sensor:"); Serial.println(nbTemperatureSensor);
+#if (NDSPROBE > 0)
+	dallasSensors.begin();
+	int nbDSProbeCount = dallasSensors.getDeviceCount();  // @@RCSIMU nbDSProbeCount = 3;
+	#if defined(LOG_DEBUG)		
+	Serial.println("Nb DS:"); Serial.println(nbDSProbeCount);
 	#endif
 	// just to avoid probleme with some sensor where the first value returned is not correct
-	for (int ploop = 0 ; ploop < NDSPROBE; ploop++) {
-		getDSTemperature(ploop);
+	int indexDS;
+	for (indexDS = nbTotalProbe ; indexDS < nbTotalProbe+NDSPROBE; indexDS++) {
+		ptrProbes[indexDS] = new ProbeDS (PROBE_ID+indexDS , indexDS);
+		ptrProbes[indexDS]->readValue();
+		Serial.println(ptrProbes[indexDS]->toString());
 	}
-	#endif
-	#if (NDHT > 0)	
+	nbTotalProbe += NDSPROBE;	
+#endif
+	
+#if (NDHT > 0)	// manage only one DHT
 	dhtprobe.begin();
-	#endif	
-
+	ptrProbes[nbTotalProbe] = new ProbeDHTT (PROBE_ID+nbTotalProbe , nbTotalProbe);
+	ptrProbes[nbTotalProbe]->readValue();
+	Serial.println(ptrProbes[nbTotalProbe]->toString());
+	nbTotalProbe++;
+	ptrProbes[nbTotalProbe] = new ProbeDHTH (PROBE_ID+nbTotalProbe , nbTotalProbe);
+	ptrProbes[nbTotalProbe]->readValue();
+	Serial.println(ptrProbes[nbTotalProbe]->toString());
+	nbTotalProbe++;
+#endif
+	
+	// setup status PIN
+	pinMode(STATUS_PIN, INPUT_PULLUP);
 	attachInterrupt(digitalPinToInterrupt(STATUS_PIN), aStatusPinISR, CHANGE);
 
 	// Start
@@ -144,7 +536,7 @@ void setup() {
 	#endif
 	Serial.print( checkProbFreq, DEC  );
 	Serial.println("  -------------checkProbFreq");
-
+    tempLastCheckProbe = millis() - checkProbFreq;
 	blinkLed(2, 70);
 	
 	wdEnable();
@@ -176,24 +568,23 @@ void setup() {
 void loop(){
 	wdReset();	
 	currentMillis = millis();
-	#if defined(LOG_INFO)
-		long diff = currentMillis - oldMillis;
+	#if defined(LOG_INFO2)
+		long diff = currentMillis - tempLastCheckProbe;
 		if (diff > 10) {
-			Serial.print( currentMillis - oldMillis );
+			Serial.print( currentMillis - tempLastCheckProbe );
 			Serial.println("  -------------diff time");
 		}
-		oldMillis = currentMillis;
 	#endif
 	
 	if (lastState != aState) {
-		delay(500);
+		wdDelay(500);
 		manageInput();
 	}
 	wdReset();	
 	
 	// manage status to send
 	if ((currentMillis - tempLastSendState) > stateSendFreq && isStatusChanged) {
-		send2RF(true , STATUS_VPIN, aState, PROBE_ID, false);
+		theRadio->send2RF(true , STATUS_VPIN, aState, PROBE_ID, false);
 		isStatusChanged = false;
 		tempLastSendState = currentMillis;
 		blinkLed(3, 20);
@@ -203,13 +594,18 @@ void loop(){
 	
 	if ((currentMillis - tempLastCheckProbe) > checkProbFreq ) {		
 	#if defined(LOG_INFO)		
-		Serial.println("*********************** tempLastCheckProbe *****************************"); 
+		Serial.println("*********************** sendAllProbeValues *****************************"); 
 		Serial.println();
 	#endif	
-		sendAllProbeValues(NDSPROBE + NDHT*2);
-		tempLastCheckProbe = currentMillis;
+		sendAllProbes(nbTotalProbe);
+		tempLastCheckProbe = millis();
 		blinkLed(5, 10);
-	}
+	} /*else {
+		Serial.println("*********************** not now *****************************"); 
+		Serial.println();
+		//delay(5000);
+
+	}*/
 }
 
 
@@ -222,12 +618,12 @@ void loop(){
 //
 //
 void blinkLed(int repeat, int time) {
-#if defined(ledPin)
+#if defined(LED_PIN)
 	for (int i = 0; i < repeat; i++) {
-		delay(time);
-		digitalWrite(ledPin, HIGH);
-		delay(time);
-		digitalWrite(ledPin, LOW);
+		wdDelay(time);
+		digitalWrite(LED_PIN, HIGH);
+		wdDelay(time);
+		digitalWrite(LED_PIN, LOW);
 	}
 #endif
 }
@@ -262,154 +658,37 @@ void aStatusPinISR() {
 
 
 
-//   _____                                   _
-//  |_   _|                                 | |
-//    | | ___ _ __ ___  _ __   ___ _ __ __ _| |_ _   _ _ __ ___
-//    | |/ _ \ '_ ` _ \| '_ \ / _ \ '__/ _` | __| | | | '__/ _ \
-//    | |  __/ | | | | | |_) |  __/ | | (_| | |_| |_| | | |  __/
-//    \_/\___|_| |_| |_| .__/ \___|_|  \__,_|\__|\__,_|_|  \___|
-//                     | |
-//                     |_|
-/**
-   TorH : true for temperature, false for humidity
-**/
-void sendAllProbeValues(byte nbTotalProbe) {
-	for ( int numProbe = 0;  numProbe <nbTotalProbe ; numProbe++) {
-		sendProbeValues(numProbe);
-	}
-}
-
-void sendProbeValues(int lProbeNum) {
-	// sent only when change detected 
-
-	#if defined (LOG_DEBUG)
-	Serial.print("sendProbeValues #"); Serial.print(lProbeNum);
-	Serial.print(" Type="); Serial.println(probeType[lProbeNum]);
-	#endif
-
-	int newValue = READ_ERROR;
-
-	switch (probeType[lProbeNum]) {
-	case 'H' :
-		newValue = getDHT22Humi();
-		break;
-	case 'T' :
-		newValue = getDHT22Temp();
-		break;
-	case 'D' :
-		newValue = getDSTemperature(lProbeNum);
-		break;
-	}
-
-
-	#if defined (LOG_DEBUG)
-	Serial.print("newValue="); Serial.print(newValue);
-	Serial.print(" lastValue="); Serial.println(lastValue[lProbeNum]);
-	#endif	
-
-
-	long gap = 0;
-	if ((lastValue[lProbeNum] != newValue)) {
-		gap = abs(lastValue[lProbeNum] - newValue);
-		#if defined (LOG_DEBUG)
-		Serial.print("GapMin="); Serial.print(gapMin[lProbeNum]);
-		Serial.print(" gap="); Serial.println(gap);
-		#endif	
-	}
-	if ( gap >= 3*gapMin[lProbeNum] // send temp when change >= 0.3°
-	     || (gap >= gapMin[lProbeNum] && skeepCount[lProbeNum] > (SKEEP_MAX/2) ) // send low change every 10 min if any (depend of conf)
-	     || skeepCount[lProbeNum] > SKEEP_MAX // send value every 20 min ( depend of conf )
-	   ) {
-		lastValue[lProbeNum] = sendProbeValue(lProbeNum, newValue, true);
-		Serial.print(" ret="); Serial.println(lastValue[lProbeNum]);
-		skeepCount[lProbeNum] = 0;
-		
-	} else {
-		#if defined (LOG_DEBUG)
-		Serial.print("No Change / skeepCount="); Serial.println(skeepCount[lProbeNum]);
-		#endif	
-		skeepCount[lProbeNum] += 1;
-	}
-
-}
-
-
-
-/*******************************************************************************
-*******************************************************************************/
-#if (NDSPROBE > 0)
-float getDSTemperature(byte probeNum) {
-	// *** MORE THAN ONE RETURN ****
-	float rawValue = NAN;
-	if ( nbTemperatureSensor > probeNum ) {
-		sensors.requestTemperatures();
-		rawValue = sensors.getTempCByIndex(probeNum);
-	}
-
-	if ( isnan(rawValue) || rawValue < -10 || rawValue == 85 || rawValue > 125 ) {
-		#if defined(LOG_WARNING)		
-		Serial.println("DS #") ; Serial.print(probeNum) ;
-		Serial.println(" off or error");
-		#endif
-		return READ_ERROR;
-	}
-	#if defined(LOG_DEBUG)		
-	Serial.print("DS #") ; Serial.print(probeNum); 
-	Serial.print(" t="); Serial.println(rawValue);
-	#endif
-	return rawValue*100;
-}
-#endif
-
-#if (NDHT > 0)
-/*******************************************************************************
-*******************************************************************************/
-//              _  ______ _   _ _____ _____  _____
-//             | | |  _  \ | | |_   _/ __  \/ __  \
-//    __ _  ___| |_| | | | |_| | | | `' / /'`' / /'
-//   / _` |/ _ \ __| | | |  _  | | |   / /    / /
-//  | (_| |  __/ |_| |/ /| | | | | | ./ /___./ /___
-//   \__, |\___|\__|___/ \_| |_/ \_/ \_____/\_____/
-//    __/ |
-//   |___/
-
-/****
-   TorH : true for Temperature, false for Humidity
-**/
-int getDHT22Humi() {
-	return getDHT22Value(false);
-}
-
-
-int getDHT22Temp() {
-	return getDHT22Value(true);
-}
-
-
-int getDHT22Value(boolean TorH) {
-	// Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
-	float rawValue = TorH ? dhtprobe.readTemperature() : dhtprobe.readHumidity();
-	byte retry = 0;
-	const byte RETRY_MAX = 10;
-
-	while ( isnan(rawValue) && retry < RETRY_MAX) {		
-		delay(100);
-		#if defined(LOG_WARNING)		
-		Serial.print("DHT read retry temp="); Serial.println(TorH);
-		#endif
-		rawValue = TorH ? dhtprobe.readTemperature() : dhtprobe.readHumidity();
-		retry++;
-	}
+//   _____                _  ___  _ _______          _               
+//  /  ___|              | |/ _ \| | | ___ \        | |              
+//  \ `--.  ___ _ __   __| / /_\ \ | | |_/ / __ ___ | |__   ___  ___ 
+//   `--. \/ _ \ '_ \ / _` |  _  | | |  __/ '__/ _ \| '_ \ / _ \/ __|
+//  /\__/ /  __/ | | | (_| | | | | | | |  | | | (_) | |_) |  __/\__ \
+//  \____/ \___|_| |_|\__,_\_| |_/_|_\_|  |_|  \___/|_.__/ \___||___/
+//                                                                   
+//                                                                   
+void sendAllProbes(byte nbProbe) {
+	Probe* ptrProbe;
 	#if defined(LOG_INFO)		
-	Serial.print("DHT v:"); Serial.println(rawValue);
+	Serial.println("start sendAll...");
 	#endif
 
-	if (isnan(rawValue)) {
-		return READ_ERROR;
+	for ( int numProbe = 0;  numProbe <nbProbe ; numProbe++) {
+		ptrProbe = ptrProbes[numProbe];
+			bool needToSend = ptrProbe->checkNewValue();
+			if ( needToSend ) {
+				#if defined(LOG_INFO)		
+				Serial.println(ptrProbe->toString());
+				#endif
+				sendProbeValue(ptrProbe, true);
+				wdDelay(5000);			
+			} 
 	}
-	return rawValue*100;
+
+	#if defined(LOG_DEBUG)		
+	Serial.println("end sendAll...");
+	#endif
+
 }
-#endif
 
 
 //                      _______          _           _   _       _
@@ -420,30 +699,31 @@ int getDHT22Value(boolean TorH) {
 //  |___/\___|_| |_|\__,_\_|  |_|  \___/|_.__/ \___| \___/ \__,_|_|\__,_|\___|
 //
 //
-int sendProbeValue( byte aProbeNum, int aValue, bool aSend ) {
+int sendProbeValue( Probe* theProbe, bool aSend ) {
 	int decValueD;
+	int aValue = theProbe->lastValue;
 	bool positive = aValue > 0;
+	if ( ! positive ) aValue = 0 - aValue;
+	
+	
 	int tempValue;
 	#if defined(LOG_INFO)	
-	Serial.print(">>Probe:" ); Serial.print(aProbeNum);
+	Serial.print(">>Probe:" ); Serial.print(theProbe->ID);
 	Serial.print(" v:"); Serial.println(aValue, DEC);
 	#endif
 
 	// bad values returned by the sensor >-10 or 85
-	if ( aValue == READ_ERROR ) {
-		if ( lastValue[aProbeNum] == 9000 ) {
+	if ( aValue == Probe::READ_ERROR ) {
 		#if defined(LOG_INFO)		
-			Serial.println("READ_ERROR 99");Serial.println(lastValue[aProbeNum]);
 		#endif
-
-			tempValue = 99;
+		if ( aValue == 9000 ) { // Bizard ?????????
+			Serial.println("READ_ERROR 99");
+			tempValue = 95;
 		} else {
-		#if defined(LOG_INFO)		
-			Serial.println("READ_ERROR 98");Serial.println(lastValue[aProbeNum]);
-		#endif
-			tempValue = 99;
+			Serial.print("READ_ERROR 98"); Serial.println(aValue);
+			tempValue = 90;
 		}
-			
+
 		//tempValue = 99;
 		decValueD = 9;
 		positive = false;
@@ -458,44 +738,22 @@ int sendProbeValue( byte aProbeNum, int aValue, bool aSend ) {
 		}
 	}
 	// return temperature to -0 in case of error
-	#if defined(LOG_INFO)		
-	//Serial.print("Probe sensor Value "); Serial.println( aValue, DEC);
-	Serial.print(" ID: " ); Serial.print( PROBE_ID+aProbeNum, DEC);
-	Serial.print(" value: " );
+#if defined(LOG_INFO)		
+	Serial.print(" ID: " ); Serial.print( theProbe->ID, DEC);
+	Serial.print(" (Pin " ); Serial.print( theProbe->ID+20, DEC);	
+	Serial.print(") value: " );
 	Serial.print(tempValue); Serial.print("."); Serial.print(decValueD);
 	Serial.print(" Signe: " ); Serial.println( positive, DEC);
-	#endif
+#endif
 	if ( aSend ) {
-		send2RF(false , tempValue, decValueD, PROBE_ID+aProbeNum, positive);
+		//Serial.print(" FACK SEND " ); // 
+		theRadio->send2RF(false , tempValue, decValueD, theProbe->ID, positive);
 	}
 	return tempValue*100;
 }
 
 
 
-
-//                      _  _____ ____________
-//                     | |/ __  \| ___ \  ___|
-//   ___  ___ _ __   __| |`' / /'| |_/ / |_
-//  / __|/ _ \ '_ \ / _` |  / /  |    /|  _|
-//  \__ \  __/ | | | (_| |./ /___| |\ \| |
-//  |___/\___|_| |_|\__,_|\_____/\_| \_\_|
-//
-//
-/*******************************************************************************
-*******************************************************************************/
-void send2RF(boolean aFlagGroup, int aValue, int aDecValue, byte aReceiver, boolean aFlagOnOff ) {
-	unsigned long senderID = 9999000 + (aValue*10)+aDecValue;
-	#if defined(LOG_DEBUG)
-	Serial.print("  >>");
-	logRFMessage(senderID, aFlagGroup,aReceiver, aFlagOnOff);
-    #endif 
-
-	// Serial.println("FAKE mySwitch.send");
-	for (int i = 1; i <= RADIO_REPEATS; i++) {
-		mySwitch.send(senderID, aFlagGroup, aReceiver, aFlagOnOff);
-	}
-}
 
 //                 _       _    ______            
 //                | |     | |   |  _  \           
@@ -531,6 +789,19 @@ void wdReset() {
 	wdt_reset();
 }
 
+void wdDelay(int aDelay) {
+	wdReset();
+	int secds = 0;
+	for ( int iloop = 0; iloop < aDelay; iloop++ ) { 
+		secds++;
+		if (secds > 500) {
+			wdReset();
+			secds=0;
+		} else {
+			delay(1);
+		}
+	}
+}
 
 
 //  ______       _ _     _     ___   _               _
