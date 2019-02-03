@@ -133,7 +133,7 @@ private:
 		unsigned long lRFAddr = this->mySwitch.getReceivedAddr();
 
 		if ( RFLastSender != lRFData || RFLastAddr != lRFAddr ) {
-		#if defined(LOG_INFO)	
+		#if defined(LOG_DEBUG)	
 			Serial.println(F("MySwitch available"));
 		#endif
 			RFLastSender = lRFData;
@@ -160,9 +160,9 @@ private:
 #if defined (LOG_INFO)
 	void logRFMessage(unsigned long aSender, byte aGroup, byte aReceptor, byte aOnOff ) {
 		Serial.print(aSender);
-		Serial.print(" G:");Serial.print(aGroup);
-		Serial.print(" R:");Serial.print(aReceptor);
-		Serial.print(" o:");Serial.println(aOnOff);
+		Serial.print(F(" G:"));Serial.print(aGroup);
+		Serial.print(F(" R:"));Serial.print(aReceptor);
+		Serial.print(F(" o:"));Serial.println(aOnOff);
 	}
 #endif
 
@@ -170,13 +170,15 @@ private:
 
 
 class Probe {
-	static const byte SKEEP_MAX = 3;
+	static const byte SKEEP_MAX = 6;
 public:
 	static const unsigned int READ_ERROR = 9999;
 	static const byte TypeDS = 0;
 	static const byte TypeDHTH = 1;
 	static const byte TypeDHTT = 2;
 	static const byte TypeBMP085 = 3;
+	static const byte TypeBMP085T = 4;
+	
 
 	int gapMin =0;
 	byte ID = 0;
@@ -204,6 +206,7 @@ public:
 	
 	int InitReading() {
 		#if defined(TEST_RUN)
+		this->lastValue = 500;
 		return 0;
 		#else
 		return readValue();
@@ -216,39 +219,40 @@ public:
 	*/
 	bool checkNewValue() {
 	    #if defined (LOG_INFO)
-		Serial.print("\n checkNewValue #"); Serial.println(this->index);
+		Serial.print(F("\n checkNewValue #")); Serial.print(this->index);
 		//Serial.print(" Type="); Serial.println(this->getType());
+		Serial.print(F(" nextSkeep:"));  Serial.println(SKEEP_MAX - this->skeepCount);
 	    #endif
 		#if defined(TEST_RUN)
-		  int newValue = this->lastValue + 100;
+		  int newValue = this->lastValue + 150;
 		#else
 		  int newValue = readValue();
 		#endif
 	    #if defined (LOG_INFO)
-		Serial.print("newV="); Serial.print(newValue);
-		Serial.print(" lastV="); Serial.println(this->lastValue);
+		Serial.print(F("newV=")); Serial.print(newValue);
+		Serial.print(F(" lastV=")); Serial.println(this->lastValue);
 	    #endif	
 
 		long gap = 0;
 		if ((this->lastValue != newValue)) {
 			gap = abs(this->lastValue - newValue);
 		#if defined (LOG_DEBUG)
-			Serial.print("GapMin="); Serial.print(this->gapMin);
-			Serial.print(" gap="); Serial.println(gap);
+			Serial.print(F("GapMin=")); Serial.print(this->gapMin);
+			Serial.print(F(" gap=")); Serial.println(gap);
 		#endif	
 		}
 		if ( gap >= 3*this->gapMin // send temp when change >= 0.3°
-		        || (gap >= this->gapMin && this->skeepCount > (SKEEP_MAX/2) ) // send low change every 10 min if any (depend of conf)
+		        || (gap >= this->gapMin && this->skeepCount > (SKEEP_MAX/2) ) // send few change every 10 min if any (depend of conf)
 		        || this->skeepCount > SKEEP_MAX // send value every 20 min ( depend of conf )
 		   ) {
 			this->lastValue = newValue;
-			Serial.print("Need2send="); Serial.println(this->lastValue );
+			Serial.print(F("Need2send=")); Serial.println(this->lastValue );
 			this->skeepCount = 0;
 			// more than one return
 			return true;
 		} else {
 		#if defined (LOG_DEBUG)
-			Serial.print("No Change Time="); Serial.println(this->skeepCount);
+			Serial.print(F("No Change Time=")); Serial.println(this->skeepCount);
 		#endif	
 			this->skeepCount++;
 			// more than one return			
@@ -260,6 +264,7 @@ public:
 	String toString() {
 		String thisStr = "Probe::ID:"; thisStr += this->ID;
 		thisStr += " type:"; thisStr += this->type;
+		thisStr += " index:"; thisStr += this->index;
 		thisStr += " gapMin:"; thisStr += this->gapMin;
 		thisStr += " lastValue:"; thisStr += this->lastValue;
 		return thisStr;
@@ -279,7 +284,7 @@ public:
 	
 	int readValue() {
 	#if defined (LOG_DEBUG)
-		Serial.println("DS::readValue()");
+		Serial.println(F("DS::readValue()"));
 	#endif
 		
 		// *** MORE THAN ONE RETURN ****
@@ -288,13 +293,13 @@ public:
 		rawValue = dallasSensors.getTempCByIndex(this->index);
 		if ( isnan(rawValue) || rawValue < -55 || rawValue == 85 || rawValue > 125 ) {
 		#if defined(LOG_WARNING)		
-			Serial.print("DS#") ; Serial.print(this->index) ; Serial.println(" off or err");
+			Serial.print(F("DS#")) ; Serial.print(this->index) ; Serial.println(F(" off or err"));
 		#endif
 			return Probe::READ_ERROR;
 		}		
 	#if defined(LOG_INFO)		
-		Serial.print("DS#") ; Serial.print(this->index);
-		Serial.print(" t="); Serial.println(rawValue);
+		Serial.print(F("DS#")) ; Serial.print(this->index);
+		Serial.print(F(" t=")); Serial.println(rawValue);
 	#endif
 		return rawValue*100;
 	}
@@ -311,7 +316,7 @@ public:
 	int readValue() {
 		// Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
 	#if defined (LOG_DEBUG)
-		Serial.println("DHTT::readValue()");
+		Serial.println(F("DHTT::readValue()"));
 	#endif
 		
 		float rawValue = dhtprobe.readTemperature(); 
@@ -324,7 +329,7 @@ public:
 			retry++;
 		}
 		#if defined(LOG_INFO)		
-		Serial.print("DHT T="); Serial.println(rawValue);
+		Serial.print(F("DHT T=")); Serial.println(rawValue);
 		#endif
 	
 		if (isnan(rawValue)) {
@@ -340,7 +345,7 @@ public:
 		
 	int readValue() {
 	#if defined (LOG_DEBUG)
-		Serial.println("ProbeDHTH::readValue");
+		Serial.println(F("ProbeDHTH::readValue"));
 	#endif
 		
 		// Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
@@ -354,7 +359,7 @@ public:
 			retry++;
 		}
 		#if defined(LOG_INFO)		
-		Serial.print("DTH H="); Serial.println(rawValue);
+		Serial.print(F("DTH H=")); Serial.println(rawValue);
 		#endif
 	
 		if (isnan(rawValue)) {
@@ -373,11 +378,11 @@ public:
 	/* READVALUE */
 	int readValue() {
 		#if defined (LOG_DEBUG)
-		Serial.println("BMP085::readValue");
+		Serial.println(F("BMP085::readValue"));
 		#endif
 		long seaLevelPressure = bmp.getSeaLevel(bmp.readFloatPressure(), 235);
 		#if defined(LOG_INFO)		
-		Serial.print("seaPr=");
+		Serial.print(F("seaPr="));
 		Serial.println(seaLevelPressure/100);
 		#endif
 		return seaLevelPressure - 100000; // 
@@ -387,16 +392,16 @@ public:
 
 class ProbeBMP085T : public Probe  {
 public:
-	ProbeBMP085T(byte newID, byte newIndex): Probe(Probe::TypeBMP085,  newID,  newIndex, 10){	}
+	ProbeBMP085T(byte newID, byte newIndex): Probe(Probe::TypeBMP085T,  newID,  newIndex, 10){	}
 	
 	/* READVALUE */
 	int readValue() {
 		#if defined (LOG_DEBUG)
-		Serial.println("BMP085::readValue");
+		Serial.println(F("BMP085::readValue"));
 		#endif
         double realTemperature = bmp.readTemperature();	
 		#if defined(LOG_INFO)		
-		Serial.print("T=");
+		Serial.print(F("T="));
 		Serial.println(realTemperature);
 		#endif
   		realTemperature *=100;
@@ -421,7 +426,7 @@ const byte PROBE_ID = 8; // ID from 28 To ....
 
 Radio* theRadio;
 
-Probe* ptrProbes[NDSPROBE + NDHT*2 + NBMP085*2]; // same value for all
+Probe* ptrProbes[1+ NDSPROBE + NDHT*2 + NBMP085*2]; // same value for all
 
 
 // minimum gap to send value 10 for 0.1°C, and 100 for 1%
@@ -429,10 +434,10 @@ Probe* ptrProbes[NDSPROBE + NDHT*2 + NBMP085*2]; // same value for all
 
 unsigned long tempLastCheckProbe = 0 ;
 
-//unsigned long checkProbFreq = 10*60000; //10 * 1 minutes
-unsigned long checkProbFreq = 60000;  //60 sec
+unsigned long checkProbFreq = 10*60000; //10 * 1 minutes
 
-const byte SKEEP_MAX = 5;
+//unsigned long checkProbFreq = 60000;  //60 sec
+
 
 // Command group
 // 0 = inputPin, 1
@@ -502,21 +507,21 @@ void setup() {
 	}
 	nbTotalProbe++;	
 	#endif
-	Serial.print("nbTotalProbe="); Serial.println(nbTotalProbe);
+	Serial.print(F("nbTotalProbe=")); Serial.println(nbTotalProbe);
 	#if (NDSPROBE > 0)
 	dallasSensors.begin();
-	int nbDSProbeCount = dallasSensors.getDeviceCount();  // @@RCSIMU nbDSProbeCount = 3;
+	int nbDSProbeCount = dallasSensors.getDeviceCount();  
 	#if defined(LOG_DEBUG)		
-	Serial.println("Nb DS:"); Serial.println(nbDSProbeCount);
+	Serial.println(F("Nb DS:")); Serial.println(nbDSProbeCount);
 	#endif
 	// just to avoid probleme with some sensor where the first value returned is not correct
 	int indexDS;
 	for (indexDS = nbTotalProbe ; indexDS < nbTotalProbe+NDSPROBE; indexDS++) {
 		ptrProbes[indexDS] = new ProbeDS (PROBE_ID+indexDS , indexDS);
-		ptrProbes[indexDS]->readValue();
+		ptrProbes[indexDS]->InitReading();
 		Serial.println(ptrProbes[indexDS]->toString());
 	}
-	nbTotalProbe += NDSPROBE;	
+	nbTotalProbe += NDSPROBE;
 	#endif
 	// setup status PIN
 	pinMode(STATUS_PIN, INPUT_PULLUP);
@@ -529,7 +534,7 @@ void setup() {
 
 	// Start
 	#if defined(LOG)
-	Serial.print("Start loop ProbesNb="); Serial.println(nbTotalProbe);
+	Serial.print(F("Start loop ProbesNb=")); Serial.println(nbTotalProbe);
 	#endif
 	
 	tempLastCheckProbe = millis() - checkProbFreq + 10000;
@@ -566,7 +571,7 @@ void loop(){
 		tempLastCheckProbe = millis();
 	} else {
 	#if defined (LOG_DEBUG)
-		Serial.print("elpase time:");
+		Serial.print(F("elpase time:"));
 		Serial.print((millis() - tempLastCheckProbe) / 1000 );
 		Serial.print("/"); Serial.println(checkProbFreq / 1000);
 		delay(1000);
@@ -630,7 +635,7 @@ void sendAllProbes(byte nbProbe) {
 	}
 
 	#if defined(LOG_DEBUG)		
-	Serial.println("end sendAll...");
+	Serial.println(F("end sendAll..."));
 	#endif
 
 }
@@ -659,10 +664,10 @@ int sendProbeValue( Probe* theProbe, bool aSend ) {
 	// bad values returned by the sensor >-10 or 85
 	if ( aValue == Probe::READ_ERROR ) {
 		if ( aValue == 9000 ) { // Bizard ?????????
-			Serial.println("READ_ERROR 99");
+			Serial.println(F("READ_ERROR 99"));
 			tempValue = 95;
 		} else {
-			Serial.print("READ_ERROR 98"); Serial.println(aValue);
+			Serial.print(F("READ_ERROR 98")); Serial.println(aValue);
 			tempValue = 90;
 		}
 		decValueD = 9;
@@ -679,11 +684,11 @@ int sendProbeValue( Probe* theProbe, bool aSend ) {
 	}
 	// return temperature to -0 in case of error
 #if defined(LOG_INFO)		
-	Serial.print(" ID: " ); Serial.print( theProbe->ID, DEC);
-	Serial.print(" (Pin " ); Serial.print( theProbe->ID+20, DEC);	
-	Serial.print(") value: " );
+	Serial.print(F(" ID: " )); Serial.print( theProbe->ID, DEC);
+	Serial.print(F(" (Pin " )); Serial.print( theProbe->ID+20, DEC);	
+	Serial.print(F(") value: " ));
 	Serial.print(tempValue); Serial.print("."); Serial.print(decValueD);
-	Serial.print(" Signe: " ); Serial.println( positive, DEC);
+	Serial.print(F(" Signe: " )); Serial.println( positive, DEC);
 #endif
 	if ( aSend ) {
 		//Serial.print(" FACK SEND " ); // 
@@ -711,10 +716,10 @@ void logBuildVersion (void) {
 	String the_cpp_name = the_path.substring(slash_loc+1);
 	int dot_loc = the_cpp_name.lastIndexOf('.');
 	String the_sketchname = the_cpp_name.substring(0, dot_loc);
-	Serial.print("\nSketch: "); Serial.print(the_sketchname);
-	Serial.print(" build:"); Serial.print(__DATE__);
-	Serial.print(" / "); Serial.print(__TIME__);
-	Serial.println("\n start setup");
+	Serial.print(F("\nSketch: ")); Serial.print(the_sketchname);
+	Serial.print(F(" build:")); Serial.print(__DATE__);
+	Serial.print(F(" / ")); Serial.print(__TIME__);
+	Serial.println(F("\n start setup"));
 }
 #endif
 
@@ -737,7 +742,7 @@ void checkSettingsBMP085()
 	Serial.print("BMP085 v:");
 	long bmpVersion = bmp.getVersion();
 	Serial.print(bmpVersion >> 8); Serial.print("."); Serial.print(bmpVersion & 0xFF);
-	Serial.print(" (0x"); Serial.print(bmpVersion, HEX); Serial.print(") oversampling:");
+	Serial.print(" (0x"); Serial.print(bmpVersion, HEX); Serial.print(F(") oversampling:"));
 	// Serial.print("Oversampling: ");
 	Serial.println(bmp.getOversampling());
 	//Software Oversampling: 
@@ -759,7 +764,7 @@ void InitializeBMP085() {
   int timeout = 0;
   while(!bmp.begin(BMP085_ULTRA_HIGH_RES) && (timeout<10) )
   {
-    Serial.print("init BMP085 error timeout=");
+    Serial.print(F("init BMP085 error timeout="));
     timeout += 1;
     Serial.println(timeout);
     delay(500);
@@ -792,7 +797,7 @@ void manageInput() {
 	byte bState = digitalRead(STATUS_PIN);
 	if (lastState != bState) {
 		#if defined (LOG_INFO)
-		Serial.print(" BUTTON="); Serial.println( bState );
+		Serial.print(F(" BUTTON=")); Serial.println( bState );
 		#endif
 		lastState = bState;
 		isStatusChanged=true;
