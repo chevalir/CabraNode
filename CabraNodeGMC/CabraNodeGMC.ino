@@ -9,7 +9,9 @@
 // Cabra Node Garage retour Chaudiere et Meteo....
 //
 // Author  : chevalir
-// version : 1.0
+// version : 3.0
+// Ajout une DS pour temperature chaudiere
+
 //------------------------------------------------------------------------------
 /*
  http://patorjk.com/software/taag/#p=display&v=3&c=c%2B%2B&f=Doom&t=TypeHere
@@ -28,8 +30,8 @@
 // define LOG_WARNING 1
 // #define TEST_RUN
 
-#define NBMP085 1  // 1 I2C address of BMP085
-#define NDSPROBE 1 // 1 Number of DS18B20 connected to
+#define NDSPROBE 2 // Number of DS18B20 connected to
+#define NBMP085 2  // 1 I2C address of BMP085
 #define NDHT 1 // 1 Number of DHT22 connected to
 
 // PIN constantes
@@ -220,7 +222,6 @@ public:
 	bool checkNewValue() {
 	    #if defined (LOG_INFO)
 		Serial.print(F("\n checkNewValue #")); Serial.print(this->index);
-		//Serial.print(" Type="); Serial.println(this->getType());
 		Serial.print(F(" nextSkeep:"));  Serial.println(SKEEP_MAX - this->skeepCount);
 	    #endif
 		#if defined(TEST_RUN)
@@ -517,7 +518,7 @@ void setup() {
 	// just to avoid probleme with some sensor where the first value returned is not correct
 	int indexDS;
 	for (indexDS = nbTotalProbe ; indexDS < nbTotalProbe+NDSPROBE; indexDS++) {
-		ptrProbes[indexDS] = new ProbeDS (PROBE_ID+indexDS , indexDS);
+		ptrProbes[indexDS] = new ProbeDS (PROBE_ID+indexDS , indexDS-nbTotalProbe);
 		ptrProbes[indexDS]->InitReading();
 		Serial.println(ptrProbes[indexDS]->toString());
 	}

@@ -9,7 +9,8 @@
 // Cabra Node Garage et Meteo....
 //
 // Author  : chevalir
-// version : 1.0
+// version : 2.0
+// Ajout une DS pour temperature chaudiere
 //------------------------------------------------------------------------------
 /*
  http://patorjk.com/software/taag/#p=display&v=3&c=c%2B%2B&f=Doom&t=TypeHere
@@ -27,7 +28,7 @@
 #define LOG_INFO 1
 // define LOG_WARNING 1
 
-#define NDSPROBE 1 // Number of DS18B20 connected to
+#define NDSPROBE 2 // Number of DS18B20 connected to
 #define NDHT 1 // Number of DHT22 connected to
 // PIN constantes
 #define RFRX_PIN 2   // RF433 receiver
@@ -252,6 +253,7 @@ public:
 	String Probe::toString() {
 		String thisStr = "Probe::ID:"; thisStr += this->ID;
 		thisStr += " type:"; thisStr += this->type;
+		thisStr += " index:"; thisStr += this->index;
 		thisStr += " gapMin:"; thisStr += this->gapMin;
 		thisStr += " lastValue:"; thisStr += this->lastValue;
 		return thisStr;
@@ -487,7 +489,7 @@ void setup() {
 	// just to avoid probleme with some sensor where the first value returned is not correct
 	int indexDS;
 	for (indexDS = nbTotalProbe ; indexDS < nbTotalProbe+NDSPROBE; indexDS++) {
-		ptrProbes[indexDS] = new ProbeDS (PROBE_ID+indexDS , indexDS);
+		ptrProbes[indexDS] = new ProbeDS (PROBE_ID+indexDS , indexDS-nbTotalProbe);
 		ptrProbes[indexDS]->readValue();
 		Serial.println(ptrProbes[indexDS]->toString());
 	}
