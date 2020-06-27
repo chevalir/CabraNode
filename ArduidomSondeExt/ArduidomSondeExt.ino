@@ -8,7 +8,7 @@
 //
 //
 // Author  : chevalir
-// version : ExtV5
+// version : ExtV5.001
 /*
 http://patorjk.com/software/taag/#p=display&v=3&c=c%2B%2B&f=Doom&t=TypeHere
 */
@@ -496,7 +496,8 @@ void setup() {
 	#endif
 
 
-	
+	digitalWrite(LED_PIN, HIGH);
+
 	//--------------------------------------------------------------------------------------------------------------------------------------------------
 #if (NDSPROBE > 0)
 	dallasSensors.begin();
@@ -584,11 +585,11 @@ void loop(){
 	
 	// manage status to send
 	if ((currentMillis - tempLastSendState) > stateSendFreq && isStatusChanged) {
+		digitalWrite(LED_PIN, HIGH);
 		theRadio->send2RF(true , STATUS_VPIN, aState, PROBE_ID, false);
 		isStatusChanged = false;
 		tempLastSendState = currentMillis;
 		blinkLed(3, 20);
-
 	}
 	wdReset();	
 	
@@ -596,7 +597,8 @@ void loop(){
 	#if defined(LOG_INFO)		
 		Serial.println("*********************** sendAllProbeValues *****************************"); 
 		Serial.println();
-	#endif	
+	#endif
+		digitalWrite(LED_PIN, HIGH);
 		sendAllProbes(nbTotalProbe);
 		tempLastCheckProbe = millis();
 		blinkLed(5, 10);
